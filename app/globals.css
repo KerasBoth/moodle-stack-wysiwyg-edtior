@@ -314,7 +314,7 @@ a.tbtn, a.btn, a.mi { text-decoration: none; color: inherit; }
 .file-meta { font-size: 12px; color: var(--ink-3); white-space: nowrap; flex: none; }
 .row-del { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); opacity: 0; display: flex; gap: 2px; }
 .file-row.has-actions { padding-right: 80px; }
-.file-rows li:hover .row-del, .row-del:focus-visible { opacity: 1; }
+.file-rows li:hover .row-del, .row-del:focus-within { opacity: 1; }
 @media (max-width: 640px) {
   .dash { padding: 18px 16px 40px; }
   .file-meta { display: none; }

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "@/lib/server/store";
 import { api, logoutAndLeave } from "@/lib/client/api";
+import { personName } from "@/lib/people";
 import { IconLogout, IconPlus, IconTrash, IconUser, IconX } from "./icons";
 
 type Notify = (msg: string, err?: boolean) => void;
@@ -81,15 +82,19 @@ function PasswordDialog({ onClose, notify }: { onClose: () => void; notify: Noti
   );
 }
 
+type UserRow = User & { fileCount: number; categoryCount: number };
+
 function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => void; notify: Notify }) {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    api<{ users: User[] }>("/api/users").then((j) => setUsers(j.users)).catch((e) => setError(e.message));
+    api<{ users: UserRow[] }>("/api/users").then((j) => setUsers(j.users)).catch((e) => setError(e.message));
   }, []);
   useEffect(load, [load]);
 
@@ -97,9 +102,9 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
     e.preventDefault();
     setError(null);
     try {
-      await api("/api/users", { body: { username, password, isAdmin } });
+      await api("/api/users", { body: { username, password, isAdmin, firstName, lastName } });
       notify(`Benutzer ${username} angelegt`);
-      setUsername(""); setPassword(""); setIsAdmin(false);
+      setUsername(""); setPassword(""); setFirstName(""); setLastName(""); setIsAdmin(false);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -115,8 +120,24 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
       notify(err instanceof Error ? err.message : String(err), true);
     }
   };
-  const remove = async (u: User) => {
-    if (!window.confirm(`Benutzer „${u.username}“ löschen? Seine Aufgaben bleiben erhalten.`)) return;
+  const rename = async (u: UserRow) => {
+    const first = window.prompt(`Vorname für ${u.username}:`, u.firstName);
+    if (first === null) return;
+    const last = window.prompt(`Nachname für ${u.username}:`, u.lastName);
+    if (last === null) return;
+    try {
+      await api(`/api/users/${u.id}`, { method: "PATCH", body: { firstName: first, lastName: last } });
+      notify(`Name für ${u.username} gesetzt`);
+      load();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err), true);
+    }
+  };
+  const remove = async (u: UserRow) => {
+    const text = u.fileCount === 0 && u.categoryCount === 0
+      ? `Benutzer „${u.username}“ löschen?`
+      : `Benutzer „${u.username}“ und seine ${u.fileCount} Aufgabe(n) und ${u.categoryCount} Kategorie(n) endgültig löschen? Mit ihm geteilte Aufgaben anderer bleiben erhalten.`;
+    if (!window.confirm(text)) return;
     try {
       await api(`/api/users/${u.id}`, { method: "DELETE" });
       load();
@@ -128,14 +149,16 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
   return (
     <Modal title="Benutzerverwaltung" onClose={onClose} wide>
       <table className="vt">
-        <thead><tr><th>Benutzer</th><th>Rolle</th><th>Angelegt</th><th /></tr></thead>
+        <thead><tr><th>Benutzer</th><th>Name</th><th>Rolle</th><th>Angelegt</th><th /></tr></thead>
         <tbody>
           {users.map((u) => (
             <tr key={u.id}>
               <td><b>{u.username}</b>{u.id === self.id && <span className="chip" style={{ marginLeft: 6 }}>du</span>}</td>
+              <td>{personName(u) === u.username ? "–" : personName(u)}</td>
               <td>{u.isAdmin ? <span className="chip accent">Admin</span> : "Benutzer"}</td>
               <td>{new Date(u.createdAt).toLocaleDateString("de-DE")}</td>
               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                <button className="btn small" onClick={() => rename(u)}>Name ändern</button>{" "}
                 <button className="btn small" onClick={() => reset(u)}>Passwort setzen</button>{" "}
                 <button className="btn small danger" disabled={u.id === self.id} onClick={() => remove(u)} title="Löschen"><IconTrash /></button>
               </td>
@@ -145,6 +168,10 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
       </table>
       <form onSubmit={add} className="user-add">
         <h4>Neuer Benutzer</h4>
+        <div className="grid3">
+          <div className="field"><label>Vorname <span className="hint">optional</span></label><input className="inp" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></div>
+          <div className="field"><label>Nachname <span className="hint">optional</span></label><input className="inp" value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
+        </div>
         <div className="grid3">
           <div className="field"><label>Benutzername</label><input className="inp" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
           <div className="field"><label>Passwort</label><input className="inp" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>

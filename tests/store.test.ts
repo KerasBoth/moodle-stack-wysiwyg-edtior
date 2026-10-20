@@ -10,8 +10,9 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { type Db, POSTGRES_MIGRATIONS, SQLITE_MIGRATIONS, openPostgresDb, openSqliteDb } from "../lib/server/db.ts";
 import {
-  StoreError, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteFile, deleteUser,
-  getFile, listCategories, listFiles, listPeople, listUsers, login, logout, renameCategory, setUserNames, updateFile, userForToken,
+  StoreError, type ShareRole, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteFile, deleteUser,
+  getFile, listCategories, listFiles, listPeople, listShares, listUsers, login, logout, removeShare, renameCategory, setShare, setUserNames,
+  updateFile, userForToken,
 } from "../lib/server/store.ts";
 import { personLabel, personName } from "../lib/people.ts";
 import { hashPassword, verifyPassword } from "../lib/server/password.ts";
@@ -188,7 +189,7 @@ for (const driver of DRIVERS) {
       assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM categories WHERE id = $1", [ca.id]))!.n, 0);
     });
 
-    test("shared files are listed with their role, but stay read-only for now", async () => {
+    test("shared files are listed with their role and stay read-only", async () => {
       const db = await open();
       const anna = await createUser(db, "anna", "geheim123", false, { firstName: "Anna", lastName: "Schmidt" });
       const bob = await createUser(db, "bob", "geheim123", false);
@@ -207,8 +208,58 @@ for (const driver of DRIVERS) {
       assert.equal(shared.categoryName, null);
       assert.equal((await dashboard(db, bob.id)).recent.length, 2);
       assert.equal((await dashboard(db, bob.id)).totalFiles, 1);
-      await assert.rejects(updateFile(db, bob.id, fa.id, { content: sample }), status(404));
-      await assert.rejects(deleteFile(db, bob.id, fa.id), status(404));
+      await assert.rejects(updateFile(db, bob.id, fa.id, { content: sample }), status(403));
+      await assert.rejects(deleteFile(db, bob.id, fa.id), status(403));
+    });
+
+    test("sharing with read and edit rights", async () => {
+      const db = await open();
+      const anna = await createUser(db, "anna", "geheim123", false, { firstName: "Anna", lastName: "Schmidt" });
+      const bob = await createUser(db, "bob", "geheim123", false);
+      const carl = await createUser(db, "carl", "geheim123", false);
+      const cat = await createCategory(db, "A", anna.id);
+      const f = await createFile(db, { name: "kurve", content: sample, categoryId: cat.id }, anna.id);
+
+      await setShare(db, anna.id, f.id, bob.id, "read");
+      const seen = (await listFiles(db, bob.id, { scope: "shared" }))[0];
+      assert.equal(seen.role, "read");
+      assert.equal(seen.ownerName, "Anna Schmidt");
+      assert.equal((await listFiles(db, bob.id, { search: "kurve" })).length, 1);
+      assert.equal((await listCategories(db, bob.id)).length, 0);
+      assert.equal((await getFile(db, bob.id, f.id)).content, sample);
+      await assert.rejects(updateFile(db, bob.id, f.id, { content: sample.replace(QNAME, "X") }), status(403));
+
+      await setShare(db, anna.id, f.id, bob.id, "edit");              // Stufe ändern
+      const saved = await updateFile(db, bob.id, f.id, { content: sample.replace(QNAME, "X"), baseUpdatedAt: f.updatedAt });
+      assert.equal(saved.updatedBy, "bob");
+      await assert.rejects(updateFile(db, bob.id, f.id, { content: sample, baseUpdatedAt: f.updatedAt }), status(409)); // Konflikterkennung
+      await assert.rejects(updateFile(db, bob.id, f.id, { name: "neu" }), status(403));
+      await assert.rejects(updateFile(db, bob.id, f.id, { categoryId: null }), status(403));
+      await assert.rejects(deleteFile(db, bob.id, f.id), status(403));
+      await assert.rejects(setShare(db, bob.id, f.id, carl.id, "read"), status(403));
+      await assert.rejects(listShares(db, carl.id, f.id), status(404));
+      await assert.rejects(setShare(db, anna.id, f.id, anna.id, "read"), status(400));
+      await assert.rejects(setShare(db, anna.id, f.id, 9999, "read"), status(404));
+      await assert.rejects(setShare(db, anna.id, f.id, carl.id, "admin" as ShareRole), status(400));
+      await assert.rejects(removeShare(db, anna.id, f.id, carl.id), status(404));
+      // eigener gleichnamiger Upload des Empfängers berührt das Original nicht
+      await createFile(db, { name: "kurve", content: sample, overwrite: true }, bob.id);
+      assert.deepEqual((await getFile(db, anna.id, f.id)).questions, ["X"]);
+
+      assert.deepEqual((await listShares(db, anna.id, f.id)).map((s) => [s.username, s.role]), [["bob", "edit"]]);
+      assert.deepEqual((await dashboard(db, bob.id)).shared.map((x) => x.id), [f.id]);
+
+      await removeShare(db, anna.id, f.id, bob.id);
+      await assert.rejects(getFile(db, bob.id, f.id), status(404));
+      await assert.rejects(updateFile(db, bob.id, f.id, { content: sample }), status(404));
+
+      // Kaskaden
+      await setShare(db, anna.id, f.id, carl.id, "read");
+      await deleteUser(db, carl.id);
+      assert.deepEqual(await listShares(db, anna.id, f.id), []);
+      await setShare(db, anna.id, f.id, bob.id, "read");
+      await deleteFile(db, anna.id, f.id);
+      assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM file_shares"))!.n, 0);
     });
 
     test("saves in quick succession always get a newer timestamp", async () => {

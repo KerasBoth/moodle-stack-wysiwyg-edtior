@@ -347,7 +347,7 @@ export async function createFile(
 
 /**
  * Ändert Inhalt, Name und/oder Kategorie. `baseUpdatedAt` erkennt parallele Änderungen
- * anderer Benutzer (409, sofern nicht `force`). Vorerst darf nur der Besitzer ändern.
+ * anderer Benutzer (409, sofern nicht `force`). Besitzer ändern alles, Bearbeiter nur den Inhalt, Leser nichts.
  */
 export async function updateFile(
   db: Db,
@@ -360,7 +360,12 @@ export async function updateFile(
     const cur = await t.get<{ id: number; name: string; content: string; updated_at: string; updated_by: number | null; owner_id: number }>(
       `SELECT * FROM files WHERE id = $1${t.dialect === "postgres" ? " FOR UPDATE" : ""}`, [id],
     );
-    if (!cur || (await fileRole(t, userId, id)) !== "owner") throw new StoreError("Datei nicht gefunden", 404);
+    const role = cur ? await fileRole(t, userId, id) : null;
+    if (!cur || !role) throw new StoreError("Datei nicht gefunden", 404);
+    if (role === "read") throw new StoreError("Nur Lesezugriff", 403);
+    if (role === "edit" && (input.name !== undefined || input.categoryId !== undefined)) {
+      throw new StoreError("Name und Kategorie darf nur der Besitzer ändern", 403);
+    }
     if (input.content !== undefined && input.baseUpdatedAt && input.baseUpdatedAt !== cur.updated_at && !input.force) {
       const who = cur.updated_by == null ? null
         : await t.get<{ username: string; first_name: string; last_name: string }>("SELECT username, first_name, last_name FROM users WHERE id = $1", [cur.updated_by]);
@@ -409,8 +414,50 @@ export async function updateFile(
 }
 
 export async function deleteFile(db: Db, userId: number, id: number) {
-  const r = await db.run("DELETE FROM files WHERE id = $1 AND owner_id = $2", [id, userId]);
-  if (!r.changes) throw new StoreError("Datei nicht gefunden", 404);
+  const role = await fileRole(db, userId, id);
+  if (!role) throw new StoreError("Datei nicht gefunden", 404);
+  if (role !== "owner") throw new StoreError("Nur der Besitzer kann die Datei löschen", 403);
+  await db.run("DELETE FROM files WHERE id = $1 AND owner_id = $2", [id, userId]);
+}
+
+// ---- Freigaben ------------------------------------------------------------------------------
+
+export type ShareRole = "read" | "edit";
+export interface Share extends Person { role: ShareRole }
+
+/** Nur der Besitzer verwaltet Freigaben; wer die Datei nicht sehen darf, erfährt nicht von ihr (404). */
+async function requireOwner(db: Db, userId: number, fileId: number) {
+  const role = await fileRole(db, userId, fileId);
+  if (!role) throw new StoreError("Datei nicht gefunden", 404);
+  if (role !== "owner") throw new StoreError("Nur der Besitzer kann Freigaben verwalten", 403);
+}
+
+export async function listShares(db: Db, ownerId: number, fileId: number): Promise<Share[]> {
+  await requireOwner(db, ownerId, fileId);
+  const rows = await db.query<UserRow & { role: ShareRole }>(
+    "SELECT u.*, s.role FROM file_shares s JOIN users u ON u.id = s.user_id WHERE s.file_id = $1", [fileId]);
+  return rows
+    .map((r): Share => ({ id: r.id, username: r.username, firstName: r.first_name, lastName: r.last_name, role: r.role }))
+    .sort((a, b) => personLabel(a).localeCompare(personLabel(b), "de"));
+}
+
+/** Gibt die Datei für einen Benutzer frei oder ändert dessen Stufe. */
+export async function setShare(db: Db, ownerId: number, fileId: number, targetUserId: number, role: ShareRole): Promise<void> {
+  await requireOwner(db, ownerId, fileId);
+  if (role !== "read" && role !== "edit") throw new StoreError("Ungültige Freigabestufe", 400);
+  if (targetUserId === ownerId) throw new StoreError("Eine Datei kann nicht mit dem Besitzer geteilt werden", 400);
+  if (!(await db.get("SELECT id FROM users WHERE id = $1", [targetUserId]))) throw new StoreError("Benutzer nicht gefunden", 404);
+  await db.run(
+    `INSERT INTO file_shares (file_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (file_id, user_id) DO UPDATE SET role = excluded.role`,
+    [fileId, targetUserId, role, now()],
+  );
+}
+
+export async function removeShare(db: Db, ownerId: number, fileId: number, targetUserId: number): Promise<void> {
+  await requireOwner(db, ownerId, fileId);
+  const r = await db.run("DELETE FROM file_shares WHERE file_id = $1 AND user_id = $2", [fileId, targetUserId]);
+  if (!r.changes) throw new StoreError("Freigabe nicht gefunden", 404);
 }
 
 // ---- Dashboard ------------------------------------------------------------------------------
@@ -420,6 +467,7 @@ export interface DashboardData {
   categories: (Category & { files: FileInfo[] })[];
   uncategorized: { fileCount: number; files: FileInfo[] };
   totalFiles: number;
+  shared: FileInfo[];
 }
 
 /** Zuletzt geändert: eigene und geteilte Dateien; Kategorien und Zähler betreffen nur die eigenen. */
@@ -433,5 +481,6 @@ export async function dashboard(db: Db, userId: number, recentLimit = 10, perCat
       files: await listFiles(db, userId, { category: null, limit: perCategory }),
     },
     totalFiles: await count(db, "FROM files WHERE owner_id = $1", [userId]),
+    shared: await listFiles(db, userId, { scope: "shared" }),
   };
 }

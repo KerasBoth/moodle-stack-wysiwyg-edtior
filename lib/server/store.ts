@@ -2,6 +2,7 @@
 // und laufen unverändert mit PostgreSQL und SQLite (siehe sql.ts).
 
 import { type Db, isUniqueViolation } from "./sql.ts";
+import { claimOrphans } from "./db.ts";
 import { hashPassword, hashToken, newSessionToken, verifyPassword } from "./password.ts";
 import { describeXml } from "./xmlmeta.ts";
 
@@ -53,6 +54,8 @@ export async function createUser(db: Db, username: string, password: string, isA
       "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES ($1, $2, $3, $4) RETURNING *",
       [username, hashPassword(password), isAdmin ? 1 : 0, now()],
     );
+    // Der erste Administrator übernimmt alle herrenlosen Daten (Import, Altbestand)
+    if (isAdmin) await claimOrphans(db, row!.id);
     return toUser(row!);
   } catch (e) {
     if (isUniqueViolation(e)) throw new StoreError(`Benutzer „${username}“ existiert bereits`, 409);
@@ -126,7 +129,7 @@ export function listCategories(db: Db): Promise<Category[]> {
 export async function createCategory(db: Db, name: string, userId: number | null): Promise<Category> {
   name = checkCategoryName(name);
   try {
-    const r = await db.get<{ id: number }>("INSERT INTO categories (name, created_by, created_at) VALUES ($1, $2, $3) RETURNING id", [name, userId, now()]);
+    const r = await db.get<{ id: number }>("INSERT INTO categories (name, created_by, owner_id, created_at) VALUES ($1, $2, $2, $3) RETURNING id", [name, userId, now()]);
     return { id: r!.id, name, fileCount: 0 };
   } catch (e) {
     if (isUniqueViolation(e)) throw new StoreError(`Kategorie „${name}“ existiert bereits`, 409);
@@ -243,9 +246,9 @@ export async function createFile(
       }
       const ts = now();
       const r = await t.get<{ id: number }>(
-        `INSERT INTO files (name, content, category_id, question_names, created_by, updated_by, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [name, input.content, input.categoryId ?? null, JSON.stringify(questions), userId, userId, ts, ts],
+        `INSERT INTO files (name, content, category_id, question_names, created_by, updated_by, owner_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [name, input.content, input.categoryId ?? null, JSON.stringify(questions), userId, userId, userId, ts, ts],
       );
       return getFile(t, r!.id);
     });

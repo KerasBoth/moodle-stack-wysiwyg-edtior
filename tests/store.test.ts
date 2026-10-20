@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import pg from "pg";
-import { type Db, openPostgresDb, openSqliteDb } from "../lib/server/db.ts";
+import Database from "better-sqlite3";
+import { type Db, POSTGRES_MIGRATIONS, SQLITE_MIGRATIONS, openPostgresDb, openSqliteDb } from "../lib/server/db.ts";
 import {
   StoreError, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteUser,
   getFile, listCategories, listFiles, login, logout, renameCategory, updateFile, userForToken,
@@ -204,6 +205,98 @@ test("an existing SQLite database is moved into a new PostgreSQL database", asyn
     const again = await openPostgresDb(url, { migrateFromSqlite: file, importDir: dir });
     opened.push(again);
     assert.equal((await listFiles(again)).length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- Migration 2: Besitzer zuordnen -------------------------------------------------------------------
+
+const V1_DATA = [
+  "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (1, 'admin', 'x', 1, 't')",
+  "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (2, 'bob', 'x', 0, 't')",
+  "INSERT INTO categories (id, name, created_by, created_at) VALUES (1, 'Analysis', 2, 't')",
+  "INSERT INTO files (id, name, content, category_id, created_by, created_at, updated_at) VALUES (1, 'kurve.xml', '<quiz/>', 1, 2, 't', 't')",
+  "INSERT INTO file_versions (id, file_id, content, saved_by, saved_at) VALUES (1, 1, '<quiz/>', 2, 't')",
+  "INSERT INTO files (id, name, content, created_by, created_at, updated_at) VALUES (2, 'alt.xml', '<quiz/>', NULL, 't', 't')",
+];
+
+/** Legt eine SQLite-Datei mit Schema v1 und Daten von Hand an (ohne openSqliteDb, damit sie v1 bleibt). */
+function makeV1Sqlite(file: string) {
+  const raw = new Database(file);
+  raw.pragma("foreign_keys = ON");
+  raw.exec(SQLITE_MIGRATIONS[0]);
+  raw.pragma("user_version = 1");
+  for (const sql of V1_DATA) raw.exec(sql);
+  raw.close();
+}
+
+async function assertOwnedByAdmin(db: Db) {
+  const owners = await db.query<{ name: string; owner_id: number }>("SELECT name, owner_id FROM files ORDER BY name");
+  assert.deepEqual(owners.map((r) => r.owner_id), [1, 1]);
+  assert.equal((await db.get<{ owner_id: number }>("SELECT owner_id FROM categories"))!.owner_id, 1);
+  assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM file_versions"))!.n, 1);
+}
+
+test("migration 2 gives all existing data to the first admin and keeps versions (SQLite file)", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "stack-m2-"));
+  try {
+    const file = path.join(dir, "v1.db");
+    makeV1Sqlite(file);
+    const db = await openSqliteDb(file);
+    await assertOwnedByAdmin(db);
+    assert.deepEqual(await db.query("PRAGMA foreign_key_check"), []);
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("migration 2 on PostgreSQL gives all existing data to the first admin", async () => {
+  const url = await freshPgUrl();
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  await client.query("CREATE TABLE schema_version (version INTEGER NOT NULL)");
+  await client.query(POSTGRES_MIGRATIONS[0]);
+  await client.query("INSERT INTO schema_version (version) VALUES (1)");
+  for (const sql of V1_DATA) await client.query(sql);
+  await client.end();
+  const db = await openPostgresDb(url);
+  opened.push(db);
+  await assertOwnedByAdmin(db);
+});
+
+test("legacy import before any user exists is claimed by the first admin", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "stack-db-"));
+  try {
+    writeFileSync(path.join(dir, "alt.xml"), sample);
+    const withAdmin = await openSqliteDb(path.join(dir, "db", "a.db"), { importDir: dir, admin: { username: "root", password: "geheim123" } });
+    const root = await login(withAdmin, "root", "geheim123");
+    const files = await withAdmin.query<{ owner_id: number }>("SELECT owner_id FROM files");
+    assert.equal(files.length, 1);
+    assert.ok(files.every((f) => f.owner_id === root!.user.id));
+    await withAdmin.close();
+
+    const noAdmin = await openSqliteDb(path.join(dir, "db", "b.db"), { importDir: dir });
+    assert.ok((await noAdmin.query<{ owner_id: number | null }>("SELECT owner_id FROM files")).every((f) => f.owner_id === null));
+    assert.equal((await noAdmin.get<{ owner_id: number | null }>("SELECT owner_id FROM categories"))!.owner_id, null);
+    const created = await createUser(noAdmin, "root", "geheim123", true);
+    assert.ok((await noAdmin.query<{ owner_id: number }>("SELECT owner_id FROM files")).every((f) => f.owner_id === created.id));
+    assert.equal((await noAdmin.get<{ owner_id: number }>("SELECT owner_id FROM categories"))!.owner_id, created.id);
+    await noAdmin.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a schema-v1 SQLite file copied into PostgreSQL ends up owned by the admin", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "stack-m2pg-"));
+  try {
+    const file = path.join(dir, "v1.db");
+    makeV1Sqlite(file);
+    const db = await openPostgresDb(await freshPgUrl(), { migrateFromSqlite: file });
+    opened.push(db);
+    await assertOwnedByAdmin(db);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

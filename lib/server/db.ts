@@ -13,7 +13,8 @@ export type { Db } from "./sql.ts";
 
 // ---- Schema ------------------------------------------------------------------------------------------
 
-const SQLITE_MIGRATIONS: string[] = [
+// Nur für Tests exportiert.
+export const SQLITE_MIGRATIONS: string[] = [
   `
   CREATE TABLE users (
     id            INTEGER PRIMARY KEY,
@@ -55,9 +56,57 @@ const SQLITE_MIGRATIONS: string[] = [
   );
   CREATE INDEX file_versions_file ON file_versions(file_id, id DESC);
   `,
+  // 2: Besitzer je Datei/Kategorie, Namen je Besitzer eindeutig, Freigaben, Vor-/Nachname.
+  // UNIQUE steht in der Spaltendefinition, deshalb werden categories und files neu aufgebaut.
+  // Alle vorhandenen Daten gehören dem Administrator mit der kleinsten ID (ohne Administrator: NULL,
+  // wird beim Anlegen des ersten Administrators übernommen).
+  `
+  ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT '';
+  CREATE TABLE categories_new (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL COLLATE NOCASE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    owner_id   INTEGER REFERENCES users(id) ON DELETE CASCADE
+  );
+  INSERT INTO categories_new (id, name, created_by, created_at, owner_id)
+    SELECT id, name, created_by, created_at, (SELECT MIN(id) FROM users WHERE is_admin = 1) FROM categories;
+  DROP TABLE categories;
+  ALTER TABLE categories_new RENAME TO categories;
+  CREATE UNIQUE INDEX categories_owner_name ON categories(owner_id, lower(name));
+  CREATE TABLE files_new (
+    id             INTEGER PRIMARY KEY,
+    name           TEXT NOT NULL COLLATE NOCASE,
+    content        TEXT NOT NULL,
+    category_id    INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    question_names TEXT NOT NULL DEFAULT '[]',
+    created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    owner_id       INTEGER REFERENCES users(id) ON DELETE CASCADE
+  );
+  INSERT INTO files_new (id, name, content, category_id, question_names, created_by, updated_by, created_at, updated_at, owner_id)
+    SELECT id, name, content, category_id, question_names, created_by, updated_by, created_at, updated_at,
+           (SELECT MIN(id) FROM users WHERE is_admin = 1) FROM files;
+  DROP TABLE files;
+  ALTER TABLE files_new RENAME TO files;
+  CREATE INDEX files_updated ON files(updated_at DESC);
+  CREATE INDEX files_category ON files(category_id, updated_at DESC);
+  CREATE UNIQUE INDEX files_owner_name ON files(owner_id, lower(name));
+  CREATE TABLE file_shares (
+    file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('read','edit')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (file_id, user_id)
+  );
+  CREATE INDEX file_shares_user ON file_shares(user_id);
+  `,
 ];
 
-const POSTGRES_MIGRATIONS: string[] = [
+export const POSTGRES_MIGRATIONS: string[] = [
   `
   CREATE TABLE users (
     id            SERIAL PRIMARY KEY,
@@ -102,6 +151,27 @@ const POSTGRES_MIGRATIONS: string[] = [
   );
   CREATE INDEX file_versions_file ON file_versions (file_id, id DESC);
   `,
+  // 2: siehe SQLite-Migration
+  `
+  ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE categories ADD COLUMN owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+  UPDATE categories SET owner_id = (SELECT MIN(id) FROM users WHERE is_admin = 1);
+  DROP INDEX categories_name;
+  CREATE UNIQUE INDEX categories_owner_name ON categories (owner_id, lower(name));
+  ALTER TABLE files ADD COLUMN owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+  UPDATE files SET owner_id = (SELECT MIN(id) FROM users WHERE is_admin = 1);
+  DROP INDEX files_name;
+  CREATE UNIQUE INDEX files_owner_name ON files (owner_id, lower(name));
+  CREATE TABLE file_shares (
+    file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('read','edit')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (file_id, user_id)
+  );
+  CREATE INDEX file_shares_user ON file_shares (user_id);
+  `,
 ];
 
 /** Führt fehlende Migrationen aus; liefert true, wenn die Datenbank gerade neu angelegt wurde. */
@@ -109,11 +179,22 @@ async function migrate(db: Db): Promise<boolean> {
   if (db.dialect === "sqlite") {
     const raw = (db as unknown as { raw(): import("better-sqlite3").Database }).raw();
     const version = raw.pragma("user_version", { simple: true }) as number;
-    for (let v = version; v < SQLITE_MIGRATIONS.length; v++) {
-      await db.tx(async (t) => {
-        await t.exec(SQLITE_MIGRATIONS[v]);
-        await t.exec(`PRAGMA user_version = ${v + 1}`);
-      });
+    // Tabellen werden neu aufgebaut: bei eingeschalteten Fremdschlüsseln würde DROP TABLE files über die
+    // Kaskade alle file_versions löschen. Das Pragma wirkt nicht innerhalb einer Transaktion.
+    const migrating = version < SQLITE_MIGRATIONS.length;
+    if (migrating) raw.pragma("foreign_keys = OFF");
+    try {
+      for (let v = version; v < SQLITE_MIGRATIONS.length; v++) {
+        await db.tx(async (t) => {
+          await t.exec(SQLITE_MIGRATIONS[v]);
+          await t.exec(`PRAGMA user_version = ${v + 1}`);
+        });
+      }
+      if (migrating && (raw.pragma("foreign_key_check") as unknown[]).length) {
+        throw new Error("Migration verletzt Fremdschlüssel (PRAGMA foreign_key_check)");
+      }
+    } finally {
+      if (migrating) raw.pragma("foreign_keys = ON");
     }
     return version === 0;
   }
@@ -165,12 +246,21 @@ async function importLegacyXml(db: Db, dir: string) {
 }
 
 const COPY_TABLES: { table: string; columns: string[] }[] = [
-  { table: "users", columns: ["id", "username", "password_hash", "is_admin", "created_at"] },
+  { table: "users", columns: ["id", "username", "password_hash", "is_admin", "created_at", "first_name", "last_name"] },
   { table: "sessions", columns: ["token_hash", "user_id", "expires_at"] },
-  { table: "categories", columns: ["id", "name", "created_by", "created_at"] },
-  { table: "files", columns: ["id", "name", "content", "category_id", "question_names", "created_by", "updated_by", "created_at", "updated_at"] },
+  { table: "categories", columns: ["id", "name", "created_by", "created_at", "owner_id"] },
+  { table: "files", columns: ["id", "name", "content", "category_id", "question_names", "created_by", "updated_by", "created_at", "updated_at", "owner_id"] },
   { table: "file_versions", columns: ["id", "file_id", "content", "saved_by", "saved_at"] },
+  { table: "file_shares", columns: ["file_id", "user_id", "role", "created_at"] },
 ];
+
+/** Setzt alle Dateien und Kategorien ohne Besitzer auf den angegebenen Administrator. */
+export async function claimOrphans(db: Db, adminId: number): Promise<void> {
+  await db.tx(async (t) => {
+    await t.run("UPDATE categories SET owner_id = $1 WHERE owner_id IS NULL", [adminId]);
+    await t.run("UPDATE files SET owner_id = $1 WHERE owner_id IS NULL", [adminId]);
+  });
+}
 
 /** Kopiert alle Daten einer SQLite-Datei in die (leere) PostgreSQL-Datenbank. Liefert die Anzahl der Aufgaben. */
 async function copyFromSqlite(db: Db, file: string): Promise<number> {
@@ -179,10 +269,14 @@ async function copyFromSqlite(db: Db, file: string): Promise<number> {
     let files = 0;
     await db.tx(async (t) => {
       for (const { table, columns } of COPY_TABLES) {
-        const rows = await src.query<Record<string, unknown>>(`SELECT ${columns.join(", ")} FROM ${table}`);
+        // Ältere SQLite-Dateien kennen nicht alle Tabellen/Spalten: nur Vorhandenes kopieren, der Rest bleibt Standardwert/NULL
+        const have = new Set((await src.query<{ name: string }>(`PRAGMA table_info(${table})`)).map((c) => c.name));
+        if (!have.size) continue;
+        const cols = columns.filter((c) => have.has(c));
+        const rows = await src.query<Record<string, unknown>>(`SELECT ${cols.join(", ")} FROM ${table}`);
         if (table === "files") files = rows.length;
-        const ph = columns.map((_, i) => `$${i + 1}`).join(", ");
-        for (const row of rows) await t.run(`INSERT INTO ${table} (${columns.join(", ")}) VALUES (${ph})`, columns.map((c) => row[c]));
+        const ph = cols.map((_, i) => `$${i + 1}`).join(", ");
+        for (const row of rows) await t.run(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${ph})`, cols.map((c) => row[c]));
         if (columns[0] === "id") {
           await t.exec(`SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 0) + 1, false)`);
         }
@@ -217,6 +311,9 @@ export async function initDb(db: Db, opts: OpenOptions = {}): Promise<Db> {
         [opts.admin.username, hashPassword(opts.admin.password), new Date().toISOString()]);
     }
   }
+  // Herrenlose Daten (Import, Übernahme) gehören dem Administrator mit der kleinsten ID
+  const admin = await db.get<{ id: number | null }>("SELECT MIN(id) AS id FROM users WHERE is_admin = 1");
+  if (admin?.id != null) await claimOrphans(db, admin.id);
   return db;
 }
 

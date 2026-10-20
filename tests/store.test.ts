@@ -86,6 +86,26 @@ for (const driver of DRIVERS) {
       assert.equal(await countUsers(db), 1);
     });
 
+    test("autoRename numbers new files instead of overwriting", async () => {
+      const db = await open();
+      const u = await createUser(db, "anna", "geheim123", false);
+      const other = await createUser(db, "bob", "geheim123", false);
+      const a = await createFile(db, { name: "kurve.xml", content: sample, autoRename: true }, u.id);
+      const b = await createFile(db, { name: "kurve.xml", content: sample, autoRename: true }, u.id);
+      const c = await createFile(db, { name: "KURVE.xml", content: sample, autoRename: true }, u.id);
+      assert.deepEqual([a.name, b.name, c.name], ["kurve.xml", "kurve-2.xml", "KURVE-3.xml"]);
+      // eigener Bereich: bei bob ist der Name frei
+      assert.equal((await createFile(db, { name: "kurve.xml", content: sample, autoRename: true }, other.id)).name, "kurve.xml");
+      // gleichzeitig: beide bekommen verschiedene Namen, keiner scheitert
+      const both = await Promise.all([
+        createFile(db, { name: "neu.xml", content: sample, autoRename: true }, u.id),
+        createFile(db, { name: "neu.xml", content: sample, autoRename: true }, u.id),
+      ]);
+      assert.notEqual(both[0].name, both[1].name);
+      // ohne autoRename bleibt es bei 409
+      await assert.rejects(createFile(db, { name: "kurve.xml", content: sample }, u.id), status(409));
+    });
+
     test("user names and people directory", async () => {
       const db = await open();
       const a = await createUser(db, "admin", "geheim123", true, { firstName: " Anna ", lastName: "Schmidt" });

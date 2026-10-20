@@ -30,12 +30,13 @@ export async function POST(req: Request) {
   const user = await apiUser();
   if (user instanceof Response) return user;
   try {
-    const body = await jsonBody<{ name: string; content: string; categoryId: number | null; overwrite: boolean }>(req);
+    const body = await jsonBody<{ name: string; content: string; categoryId: number | null; overwrite: boolean; autoRename: boolean }>(req);
     const file = await createFile(await getDb(), {
       name: String(body.name ?? ""),
       content: String(body.content ?? ""),
       categoryId: body.categoryId ?? null,
       overwrite: !!body.overwrite,
+      autoRename: !!body.autoRename,
     }, user.id);
     return NextResponse.json({ file }, { status: 201 });
   } catch (e) {

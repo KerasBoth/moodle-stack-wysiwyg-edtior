@@ -2,6 +2,7 @@
 // und laufen unverändert mit PostgreSQL und SQLite (siehe sql.ts).
 
 import { type Db, isUniqueViolation } from "./sql.ts";
+import { numberedName } from "../filename.ts";
 import { claimOrphans } from "./db.ts";
 import { hashPassword, hashToken, newSessionToken, verifyPassword } from "./password.ts";
 import { describeXml } from "./xmlmeta.ts";
@@ -319,35 +320,49 @@ function questionsOf(content: string): string[] {
 
 /**
  * Legt eine Datei an. Dateinamen sind je Besitzer eindeutig. Existiert der Name schon, gibt es 409 – außer bei
- * `overwrite`, dann wird die vorhandene eigene Datei aktualisiert (alte Fassung landet in file_versions).
+ * `overwrite`, dann wird die vorhandene eigene Datei aktualisiert (alte Fassung landet in file_versions),
+ * und bei `autoRename`, dann wird der nächste freie Name `name-2.xml`, `name-3.xml` … verwendet.
+ * `overwrite` hat Vorrang vor `autoRename`.
  */
 export async function createFile(
   db: Db,
-  input: { name: string; content: string; categoryId?: number | null; overwrite?: boolean },
+  input: { name: string; content: string; categoryId?: number | null; overwrite?: boolean; autoRename?: boolean },
   userId: number,
 ): Promise<FileInfo> {
-  const name = normalizeFileName(input.name);
+  const baseName = normalizeFileName(input.name);
+  const autoRename = !!input.autoRename && !input.overwrite;
   const questions = questionsOf(input.content);
   await checkCategory(db, userId, input.categoryId);
-  try {
-    return await db.tx(async (t) => {
-      const existing = await t.get<{ id: number }>("SELECT id FROM files WHERE owner_id = $1 AND lower(name) = lower($2)", [userId, name]);
-      if (existing) {
-        if (!input.overwrite) throw new StoreError(`${name} existiert bereits`, 409, { exists: true, id: existing.id });
-        return updateFile(t, userId, existing.id, { content: input.content, categoryId: input.categoryId });
-      }
-      const ts = now();
-      const r = await t.get<{ id: number }>(
-        `INSERT INTO files (name, content, category_id, question_names, created_by, updated_by, owner_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $5, $5, $6, $6) RETURNING id`,
-        [name, input.content, input.categoryId ?? null, JSON.stringify(questions), userId, ts],
-      );
-      return getFile(t, userId, r!.id);
-    });
-  } catch (e) {
-    // gleichzeitig angelegt: wie „existiert bereits“ behandeln
-    if (isUniqueViolation(e)) throw new StoreError(`${name} existiert bereits`, 409, { exists: true });
-    throw e;
+  // Bei autoRename wird der ganze Versuch wiederholt, wenn ein gleichzeitiges Anlegen den Namen zuvor belegt hat
+  // (außerhalb der Transaktion, denn PostgreSQL bricht sie nach dem Fehler ab).
+  for (let attempt = 1; ; attempt++) {
+    let name = baseName;
+    try {
+      return await db.tx(async (t) => {
+        const taken = (n: string) => t.get<{ id: number }>("SELECT id FROM files WHERE owner_id = $1 AND lower(name) = lower($2)", [userId, n]);
+        let existing = await taken(name);
+        for (let n = 2; existing && autoRename; n++) {
+          name = numberedName(baseName, n);
+          existing = await taken(name);
+        }
+        if (existing) {
+          if (!input.overwrite) throw new StoreError(`${name} existiert bereits`, 409, { exists: true, id: existing.id });
+          return updateFile(t, userId, existing.id, { content: input.content, categoryId: input.categoryId });
+        }
+        const ts = now();
+        const r = await t.get<{ id: number }>(
+          `INSERT INTO files (name, content, category_id, question_names, created_by, updated_by, owner_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5, $5, $6, $6) RETURNING id`,
+          [name, input.content, input.categoryId ?? null, JSON.stringify(questions), userId, ts],
+        );
+        return getFile(t, userId, r!.id);
+      });
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      if (autoRename && attempt < 5) continue;
+      // gleichzeitig angelegt: wie „existiert bereits“ behandeln
+      throw new StoreError(`${name} existiert bereits`, 409, { exists: true });
+    }
   }
 }
 

@@ -10,7 +10,7 @@ import pg from "pg";
 import Database from "better-sqlite3";
 import { type Db, POSTGRES_MIGRATIONS, SQLITE_MIGRATIONS, openPostgresDb, openSqliteDb } from "../lib/server/db.ts";
 import {
-  StoreError, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteUser,
+  StoreError, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteFile, deleteUser,
   getFile, listCategories, listFiles, listPeople, listUsers, login, logout, renameCategory, setUserNames, updateFile, userForToken,
 } from "../lib/server/store.ts";
 import { personLabel, personName } from "../lib/people.ts";
@@ -104,13 +104,14 @@ for (const driver of DRIVERS) {
       const u = await createUser(db, "anna", "geheim123", false);
       const cat = await createCategory(db, "Analysis", u.id);
       await assert.rejects(createCategory(db, "analysis", u.id), status(409));
-      await renameCategory(db, cat.id, "Analysis I");
-      await assert.rejects(renameCategory(db, 9999, "X"), status(404));
+      await renameCategory(db, u.id, cat.id, "Analysis I");
+      await assert.rejects(renameCategory(db, u.id, 9999, "X"), status(404));
 
       const f = await createFile(db, { name: "kurve", content: sample, categoryId: cat.id }, u.id);
       assert.equal(f.name, "kurve.xml");
       assert.deepEqual(f.questions, [QNAME]);
       assert.equal(f.updatedBy, "anna");
+      assert.equal(f.role, "owner");
       assert.equal(f.size, sample.length);
       await assert.rejects(createFile(db, { name: "KURVE.xml", content: sample }, u.id), status(409));
       await assert.rejects(createFile(db, { name: "x.xml", content: "<quiz/>" }, u.id), /keine STACK-Aufgabe/);
@@ -119,18 +120,18 @@ for (const driver of DRIVERS) {
 
       // Paralleles Bearbeiten wird erkannt
       const edited = sample.replace(QNAME, "Neu");
-      const f2 = await updateFile(db, f.id, { content: edited, baseUpdatedAt: f.updatedAt }, u.id);
+      const f2 = await updateFile(db, u.id, f.id, { content: edited, baseUpdatedAt: f.updatedAt });
       assert.deepEqual(f2.questions, ["Neu"]);
-      await assert.rejects(updateFile(db, f.id, { content: sample, baseUpdatedAt: f.updatedAt }, u.id), status(409));
-      await updateFile(db, f.id, { content: sample, baseUpdatedAt: f.updatedAt, force: true }, u.id);
+      await assert.rejects(updateFile(db, u.id, f.id, { content: sample, baseUpdatedAt: f.updatedAt }), status(409));
+      await updateFile(db, u.id, f.id, { content: sample, baseUpdatedAt: f.updatedAt, force: true });
       assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM file_versions"))!.n, 2);
       // Überschreiben über den Namen legt ebenfalls eine Version an
       await createFile(db, { name: "kurve.xml", content: edited, overwrite: true }, u.id);
-      assert.deepEqual((await getFile(db, f.id)).questions, ["Neu"]);
+      assert.deepEqual((await getFile(db, u.id, f.id)).questions, ["Neu"]);
 
       for (let i = 0; i < 7; i++) await createFile(db, { name: `a${i}`, content: sample, categoryId: cat.id }, u.id);
       await createFile(db, { name: "lose", content: sample }, u.id);
-      const d = await dashboard(db, 4, 5);
+      const d = await dashboard(db, u.id, 4, 5);
       assert.equal(d.recent.length, 4);
       assert.equal(d.recent[0].name, "lose.xml");
       assert.equal(d.categories[0].name, "Analysis I");
@@ -138,29 +139,90 @@ for (const driver of DRIVERS) {
       assert.equal(d.categories[0].files.length, 5);
       assert.equal(d.uncategorized.fileCount, 1);
       assert.equal(d.totalFiles, 9);
-      assert.equal((await listFiles(db, { search: "A3" })).length, 1);
-      assert.equal((await listFiles(db, { search: "KURVENDISKUSSION" })).length, 8);
-      assert.equal((await listFiles(db, { search: "50%" })).length, 0);
-      assert.equal((await listFiles(db, { category: cat.id, limit: 2 })).length, 2);
+      assert.equal((await listFiles(db, u.id, { search: "A3" })).length, 1);
+      assert.equal((await listFiles(db, u.id, { search: "KURVENDISKUSSION" })).length, 8);
+      assert.equal((await listFiles(db, u.id, { search: "50%" })).length, 0);
+      assert.equal((await listFiles(db, u.id, { category: cat.id, limit: 2 })).length, 2);
 
       // Kategorie löschen: Dateien bleiben, ohne Kategorie
-      await deleteCategory(db, cat.id);
-      assert.equal((await getFile(db, f.id)).categoryId, null);
-      assert.equal((await listFiles(db, { category: null })).length, 9);
-      assert.deepEqual(await listCategories(db), []);
+      await deleteCategory(db, u.id, cat.id);
+      assert.equal((await getFile(db, u.id, f.id)).categoryId, null);
+      assert.equal((await listFiles(db, u.id, { category: null })).length, 9);
+      assert.deepEqual(await listCategories(db, u.id), []);
+    });
+
+    test("users only see their own files and categories", async () => {
+      const db = await open();
+      const anna = await createUser(db, "anna", "geheim123", false);
+      const bob = await createUser(db, "bob", "geheim123", false);
+      const ca = await createCategory(db, "Analysis", anna.id);
+      const cb = await createCategory(db, "Analysis", bob.id);           // gleicher Name, anderer Besitzer: erlaubt
+      const fa = await createFile(db, { name: "kurve", content: sample, categoryId: ca.id }, anna.id);
+      const fb = await createFile(db, { name: "kurve", content: sample }, bob.id);  // gleicher Dateiname: erlaubt
+      assert.notEqual(fa.id, fb.id);
+      assert.equal(fa.role, "owner");
+      assert.equal(fa.ownerName, "anna");
+
+      assert.deepEqual((await listFiles(db, bob.id)).map((f) => f.id), [fb.id]);
+      assert.deepEqual((await listCategories(db, bob.id)).map((c) => c.id), [cb.id]);
+      assert.equal((await listFiles(db, bob.id, { search: "kurve" })).length, 1);
+      await assert.rejects(getFile(db, bob.id, fa.id), status(404));
+      await assert.rejects(updateFile(db, bob.id, fa.id, { content: sample }), status(404));
+      await assert.rejects(deleteFile(db, bob.id, fa.id), status(404));
+      await assert.rejects(renameCategory(db, bob.id, ca.id, "X"), status(404));
+      await assert.rejects(deleteCategory(db, bob.id, ca.id), status(404));
+      await assert.rejects(updateFile(db, bob.id, fb.id, { categoryId: ca.id }), status(404));   // fremde Kategorie
+      await assert.rejects(createFile(db, { name: "y", content: sample, categoryId: ca.id }, bob.id), status(404));
+
+      // overwrite über den Namen trifft nur eigene Dateien
+      await createFile(db, { name: "kurve", content: sample.replace(QNAME, "Bob"), overwrite: true }, bob.id);
+      assert.deepEqual((await getFile(db, anna.id, fa.id)).questions, [QNAME]);
+
+      const d = await dashboard(db, bob.id);
+      assert.equal(d.totalFiles, 1);
+      assert.deepEqual(d.categories.map((c) => c.id), [cb.id]);
+
+      // Benutzer löschen kaskadiert
+      await deleteUser(db, anna.id);
+      assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM files WHERE id = $1", [fa.id]))!.n, 0);
+      assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM categories WHERE id = $1", [ca.id]))!.n, 0);
+    });
+
+    test("shared files are listed with their role, but stay read-only for now", async () => {
+      const db = await open();
+      const anna = await createUser(db, "anna", "geheim123", false, { firstName: "Anna", lastName: "Schmidt" });
+      const bob = await createUser(db, "bob", "geheim123", false);
+      const ca = await createCategory(db, "Analysis", anna.id);
+      const fa = await createFile(db, { name: "kurve", content: sample, categoryId: ca.id }, anna.id);
+      const fb = await createFile(db, { name: "eigen", content: sample }, bob.id);
+      await db.run("INSERT INTO file_shares (file_id, user_id, role, created_at) VALUES ($1, $2, 'read', $3)", [fa.id, bob.id, "t"]);
+
+      assert.deepEqual((await listFiles(db, bob.id, { scope: "shared" })).map((f) => f.id), [fa.id]);
+      assert.deepEqual((await listFiles(db, bob.id, { scope: "own" })).map((f) => f.id), [fb.id]);
+      assert.equal((await listFiles(db, bob.id)).length, 2);
+      assert.equal((await listFiles(db, bob.id, { category: ca.id })).length, 0);
+      const shared = await getFile(db, bob.id, fa.id);
+      assert.equal(shared.role, "read");
+      assert.equal(shared.ownerName, "Anna Schmidt");
+      assert.equal(shared.categoryName, null);
+      assert.equal((await dashboard(db, bob.id)).recent.length, 2);
+      assert.equal((await dashboard(db, bob.id)).totalFiles, 1);
+      await assert.rejects(updateFile(db, bob.id, fa.id, { content: sample }), status(404));
+      await assert.rejects(deleteFile(db, bob.id, fa.id), status(404));
     });
 
     test("saves in quick succession always get a newer timestamp", async () => {
       const db = await open();
-      const f = await createFile(db, { name: "k", content: sample }, null);
+      const u = await createUser(db, "anna", "geheim123", false);
+      const f = await createFile(db, { name: "k", content: sample }, u.id);
       let base = f.updatedAt;
       for (let i = 0; i < 5; i++) {
-        const next = await updateFile(db, f.id, { content: sample.replace(QNAME, `V${i}`), baseUpdatedAt: base }, null);
+        const next = await updateFile(db, u.id, f.id, { content: sample.replace(QNAME, `V${i}`), baseUpdatedAt: base });
         assert.ok(next.updatedAt > base);
         base = next.updatedAt;
       }
       // alter Stand wird zuverlässig als Konflikt erkannt
-      await assert.rejects(updateFile(db, f.id, { content: sample, baseUpdatedAt: f.updatedAt }, null), status(409));
+      await assert.rejects(updateFile(db, u.id, f.id, { content: sample, baseUpdatedAt: f.updatedAt }), status(409));
     });
 
     test("concurrent saves of the same file are serialized", async () => {
@@ -169,8 +231,8 @@ for (const driver of DRIVERS) {
       const f = await createFile(db, { name: "k", content: sample }, u.id);
       // zwei Benutzer speichern gleichzeitig auf demselben Stand – genau einer gewinnt
       const results = await Promise.allSettled([
-        updateFile(db, f.id, { content: sample.replace(QNAME, "A"), baseUpdatedAt: f.updatedAt }, u.id),
-        updateFile(db, f.id, { content: sample.replace(QNAME, "B"), baseUpdatedAt: f.updatedAt }, u.id),
+        updateFile(db, u.id, f.id, { content: sample.replace(QNAME, "A"), baseUpdatedAt: f.updatedAt }),
+        updateFile(db, u.id, f.id, { content: sample.replace(QNAME, "B"), baseUpdatedAt: f.updatedAt }),
       ]);
       assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
       assert.ok(results.some((r) => r.status === "rejected" && status(409)(r.reason)));
@@ -184,11 +246,11 @@ test("legacy XML folder is imported once, admin from env (SQLite file)", async (
     writeFileSync(path.join(dir, "alt.xml"), sample);
     const file = path.join(dir, "db", "test.db");
     let db = await openSqliteDb(file, { importDir: dir, admin: { username: "root", password: "geheim123" } });
-    assert.equal((await listFiles(db))[0].categoryName, "Importiert");
-    assert.ok(await login(db, "root", "geheim123"));
+    const root = (await login(db, "root", "geheim123"))!;
+    assert.equal((await listFiles(db, root.user.id))[0].categoryName, "Importiert");
     await db.close();
     db = await openSqliteDb(file, { importDir: dir });
-    assert.equal((await listFiles(db)).length, 1);
+    assert.equal((await listFiles(db, root.user.id)).length, 1);
     await db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -203,7 +265,7 @@ test("an existing SQLite database is moved into a new PostgreSQL database", asyn
     const u = await createUser(lite, "anna", "geheim123", true);
     const cat = await createCategory(lite, "Analysis", u.id);
     const f = await createFile(lite, { name: "kurve", content: sample, categoryId: cat.id }, u.id);
-    await updateFile(lite, f.id, { content: sample.replace(QNAME, "Neu") }, u.id);
+    await updateFile(lite, u.id, f.id, { content: sample.replace(QNAME, "Neu") });
     await lite.close();
 
     writeFileSync(path.join(dir, "ignoriert.xml"), sample);
@@ -211,7 +273,7 @@ test("an existing SQLite database is moved into a new PostgreSQL database", asyn
     const pgDb = await openPostgresDb(url, { migrateFromSqlite: file, importDir: dir });
     opened.push(pgDb);
     assert.ok(await login(pgDb, "anna", "geheim123"));
-    const files = await listFiles(pgDb);
+    const files = await listFiles(pgDb, u.id);
     assert.deepEqual(files.map((x) => [x.id, x.name, x.categoryName, x.questions[0]]), [[f.id, "kurve.xml", "Analysis", "Neu"]]);
     assert.equal((await pgDb.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM file_versions"))!.n, 1);
     // Sequenzen stehen hinter den übernommenen IDs
@@ -220,7 +282,7 @@ test("an existing SQLite database is moved into a new PostgreSQL database", asyn
     // Zweiter Start: nichts wird doppelt übernommen
     const again = await openPostgresDb(url, { migrateFromSqlite: file, importDir: dir });
     opened.push(again);
-    assert.equal((await listFiles(again)).length, 2);
+    assert.equal((await listFiles(again, u.id)).length, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -15,12 +15,14 @@ export function isModalOpen(): boolean {
 }
 
 export function Modal({ title, onClose, children, wide, className }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; className?: string }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   // Element, das vor dem Öffnen den Fokus hatte (beim ersten Render, noch vor autoFocus).
   const [opener] = useState<Element | null>(() => (typeof document !== "undefined" ? document.activeElement : null));
 
   useEffect(() => {
+    const node = rootRef.current;
     const id = Symbol("modal");
     stack.push(id);
     const h = (e: KeyboardEvent) => {
@@ -31,13 +33,14 @@ export function Modal({ title, onClose, children, wide, className }: { title: st
       window.removeEventListener("keydown", h);
       const i = stack.indexOf(id);
       if (i >= 0) stack.splice(i, 1);
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+      // Fokus nur bei echtem Unmount zurückgeben (StrictMode simuliert das Cleanup bei noch verbundenem DOM).
+      if (node && !node.isConnected && opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, [opener]);
 
   // Portal nach document.body: später geöffnete Modals liegen so immer später im DOM und damit oben.
   return createPortal(
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal-backdrop" ref={rootRef} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h3>{title}</h3>

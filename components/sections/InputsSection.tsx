@@ -6,6 +6,7 @@ import { type StackQuestion, defaultInput, defaultPrt } from "@/lib/stack/model"
 import type { SectionProps } from "../App";
 import { MaximaEditor } from "../editors/CodeEditors";
 import { IconDown, IconPlus, IconTrash, IconUp, IconX } from "../icons";
+import { useDialogs } from "../Dialogs";
 import { Field, SectionHead, Select } from "./BasicSections";
 import ItemTabs, { useTabSelection } from "./ItemTabs";
 
@@ -72,6 +73,7 @@ function NameField({ name, onRename, taken }: { name: string; onRename: (n: stri
 }
 
 export default function InputsSection({ q, update, build }: SectionProps) {
+  const dialogs = useDialogs();
   const names = q.inputs.map((i) => i.fields.name);
   const [open, setOpen] = useTabSelection(names);
 
@@ -138,8 +140,9 @@ export default function InputsSection({ q, update, build }: SectionProps) {
                 )}
                 <button className="btn small ghost" disabled={idx === 0} title="Nach oben" onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx - 1, 0, it); })}><IconUp /></button>
                 <button className="btn small ghost" disabled={idx === q.inputs.length - 1} title="Nach unten" onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx + 1, 0, it); })}><IconDown /></button>
-                <button className="btn small danger" title="Eingabe löschen" onClick={() => {
-                  if (window.confirm(`Eingabe ${f.name} löschen? Platzhalter im Fragetext bleiben bestehen.`)) update((x) => { x.inputs.splice(idx, 1); });
+                <button className="btn small danger" title="Eingabe löschen" onClick={async () => {
+                  const ok = await dialogs.confirm({ title: "Eingabe löschen?", message: `Eingabe ${f.name} löschen? Platzhalter im Fragetext bleiben bestehen.`, confirmLabel: "Löschen", danger: true });
+                  if (ok) update((x) => { x.inputs.splice(idx, 1); });
                 }}><IconTrash /></button>
               </div>
             </div>

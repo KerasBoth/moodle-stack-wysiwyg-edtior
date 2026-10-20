@@ -5,6 +5,7 @@ import type { QTest, StackQuestion } from "@/lib/stack/model";
 import { buildPreview, runQuestionTests } from "@/lib/stack/preview";
 import type { SectionProps } from "../App";
 import { MaximaEditor } from "../editors/CodeEditors";
+import { useDialogs } from "../Dialogs";
 import { IconDice, IconFlask, IconPlus, IconTrash, IconX } from "../icons";
 import { SectionHead, Select } from "./BasicSections";
 
@@ -31,6 +32,7 @@ function stripTags(html: string) {
 }
 
 export default function TestsSection({ q, update, seed, setSeed }: SectionProps) {
+  const dialogs = useDialogs();
   const [runAll, setRunAll] = useState<{ seed: string; passed: number; total: number; failed: string[] }[] | null>(null);
 
   const notes = useMemo(() => {
@@ -88,7 +90,9 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
           <div className="right">
             <button className="btn small" disabled={q.deployedseeds.includes(String(seed))} onClick={() => update((x) => { x.deployedseeds.push(String(seed)); })}><IconPlus /> Aktueller Seed</button>
             <button className="btn small" onClick={() => addRandomSeeds(5)}><IconDice /> 5 zufällige</button>
-            <button className="btn small danger" disabled={!q.deployedseeds.length} onClick={() => window.confirm("Alle Varianten entfernen?") && update((x) => { x.deployedseeds = []; })}>Alle entfernen</button>
+            <button className="btn small danger" disabled={!q.deployedseeds.length} onClick={async () => {
+              if (await dialogs.confirm({ title: "Varianten entfernen?", message: "Alle Varianten entfernen?", confirmLabel: "Alle entfernen", danger: true })) update((x) => { x.deployedseeds = []; });
+            }}>Alle entfernen</button>
           </div>
         </div>
         <div className="card-body" style={{ padding: 0, maxHeight: 300, overflow: "auto" }}>

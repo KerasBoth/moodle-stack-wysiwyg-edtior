@@ -7,6 +7,7 @@ import type { User } from "@/lib/server/store";
 import { api, logoutAndLeave } from "@/lib/client/api";
 import { personName } from "@/lib/people";
 import { IconLogout, IconPlus, IconTrash, IconUser } from "./icons";
+import { useDialogs } from "./Dialogs";
 import { Modal } from "./Modal";
 
 type Notify = (msg: string, err?: boolean) => void;
@@ -67,6 +68,7 @@ function PasswordDialog({ onClose, notify }: { onClose: () => void; notify: Noti
 type UserRow = User & { fileCount: number; categoryCount: number };
 
 function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => void; notify: Notify }) {
+  const dialogs = useDialogs();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -93,7 +95,10 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
     }
   };
   const reset = async (u: User) => {
-    const pw = window.prompt(`Neues Passwort für ${u.username} (mind. 8 Zeichen):`);
+    const pw = await dialogs.prompt({
+      title: `Passwort setzen für ${u.username}`, label: "Neues Passwort (mind. 8 Zeichen)", type: "password", confirmLabel: "Passwort setzen",
+      validate: ({ value }) => (value.length < 8 ? "Mindestens 8 Zeichen" : null),
+    });
     if (!pw) return;
     try {
       await api(`/api/users/${u.id}`, { method: "PATCH", body: { password: pw } });
@@ -103,10 +108,12 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
     }
   };
   const rename = async (u: UserRow) => {
-    const first = window.prompt(`Vorname für ${u.username}:`, u.firstName);
-    if (first === null) return;
-    const last = window.prompt(`Nachname für ${u.username}:`, u.lastName);
-    if (last === null) return;
+    const v = await dialogs.form({
+      title: `Name ändern: ${u.username}`, confirmLabel: "Speichern",
+      fields: [{ name: "firstName", label: "Vorname", initial: u.firstName }, { name: "lastName", label: "Nachname", initial: u.lastName }],
+    });
+    if (!v) return;
+    const first = v.firstName, last = v.lastName;
     try {
       await api(`/api/users/${u.id}`, { method: "PATCH", body: { firstName: first, lastName: last } });
       notify(`Name für ${u.username} gesetzt`);
@@ -119,7 +126,7 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
     const text = u.fileCount === 0 && u.categoryCount === 0
       ? `Benutzer „${u.username}“ löschen?`
       : `Benutzer „${u.username}“ und seine ${u.fileCount} Aufgabe(n) und ${u.categoryCount} Kategorie(n) endgültig löschen? Seine Aufgaben verschwinden auch für Personen, mit denen er sie geteilt hat. Mit ihm geteilte Aufgaben anderer bleiben erhalten.`;
-    if (!window.confirm(text)) return;
+    if (!(await dialogs.confirm({ title: "Benutzer löschen?", message: text, confirmLabel: "Löschen", danger: true }))) return;
     try {
       await api(`/api/users/${u.id}`, { method: "DELETE" });
       load();

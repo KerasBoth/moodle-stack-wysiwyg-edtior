@@ -144,9 +144,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   const openServerFile = useCallback(async (id: number) => {
     setMenu(null);
-    if (dirty && !window.confirm("Ungespeicherte Änderungen verwerfen?")) return;
+    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
     fetchAndLoad(id);
-  }, [dirty, fetchAndLoad]);
+  }, [dirty, fetchAndLoad, dialogs]);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -437,10 +437,10 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     return () => window.removeEventListener("keydown", h);
   }, [saveToServer, saveAndDownload]);
 
-  const readLocalFile = useCallback((f: File) => {
-    if (dirty && !window.confirm("Ungespeicherte Änderungen verwerfen?")) return;
+  const readLocalFile = useCallback(async (f: File) => {
+    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
     f.text().then((t) => loadXml(t, null, f.name));
-  }, [dirty, loadXml]);
+  }, [dirty, loadXml, dialogs]);
 
   // Drag & Drop von XML-Dateien
   useEffect(() => {
@@ -474,16 +474,16 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     setSel(stackItems.length);
     setDirty(true);
   };
-  const deleteQuestion = () => {
+  const deleteQuestion = async () => {
     if (!current || stackItems.length < 2) return;
-    if (!window.confirm(`Aufgabe „${q?.name}“ aus der Datei entfernen?`)) return;
+    if (!(await dialogs.confirm({ title: "Aufgabe entfernen?", message: `Aufgabe „${q?.name}“ aus der Datei entfernen?`, confirmLabel: "Entfernen", danger: true }))) return;
     setQuiz((prev) => ({ items: prev.items.filter((_, i) => i !== current.idx) }));
     setSel(Math.max(0, sel - 1));
     setDirty(true);
   };
-  const newFile = () => {
+  const newFile = async () => {
     setMenu(null);
-    if (dirty && !window.confirm("Ungespeicherte Änderungen verwerfen?")) return;
+    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
     setQuiz({ items: [{ kind: "stack", q: newQuestion() }] });
     setSel(0);
     setFile(null);

@@ -7,6 +7,7 @@ import { usedInputs } from "@/lib/stack/preview";
 import type { SectionProps } from "../App";
 import { CasTextEditor, MaximaEditor } from "../editors/CodeEditors";
 import { IconDown, IconPencil, IconPlus, IconTrash, IconTree, IconX } from "../icons";
+import { useDialogs } from "../Dialogs";
 import { Field, SectionHead, Select } from "./BasicSections";
 import { PrtOverview, PrtTree } from "./PrtDiagram";
 import ItemTabs, { useTabSelection } from "./ItemTabs";
@@ -49,6 +50,7 @@ function scrollToNode(prt: string, index: number) {
 }
 
 export default function PrtsSection({ q, update, build }: SectionProps) {
+  const dialogs = useDialogs();
   const [view, setView] = useState<"overview" | "edit">("overview");
   const [selected, setSelected] = useState<string | null>(null);
   const names = q.prts.map((p) => p.name);
@@ -141,8 +143,9 @@ export default function PrtsSection({ q, update, build }: SectionProps) {
                   <button className="btn small ghost" title="Diesen PRT schließen" aria-label={`${p.name} schließen`}
                     onClick={() => setOpen(open.filter((o) => o !== p.name))}><IconX /></button>
                 )}
-                <button className="btn small danger" title="PRT löschen" onClick={() => {
-                  if (window.confirm(`PRT ${p.name} löschen?`)) update((x) => { x.prts.splice(pi, 1); });
+                <button className="btn small danger" title="PRT löschen" onClick={async () => {
+                  const ok = await dialogs.confirm({ title: "PRT löschen?", message: `PRT ${p.name} löschen?`, confirmLabel: "Löschen", danger: true });
+                  if (ok) update((x) => { x.prts.splice(pi, 1); });
                 }}><IconTrash /></button>
               </div>
             </div>

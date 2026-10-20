@@ -7,6 +7,7 @@ import type { DashboardData, FileInfo, User } from "@/lib/server/store";
 import { api, ApiError, relTime } from "@/lib/client/api";
 import { IconClock, IconFile, IconPencil, IconPlus, IconSearch, IconShare, IconTag, IconTrash, IconUpload, IconX } from "./icons";
 import { personName } from "@/lib/people";
+import { useDialogs } from "./Dialogs";
 import ShareDialog from "./ShareDialog";
 import UserMenu from "./UserMenu";
 
@@ -17,6 +18,7 @@ function editorUrl(f: { id: number }) {
 }
 
 export default function Dashboard({ user }: { user: User }) {
+  const dialogs = useDialogs();
   const [data, setData] = useState<DashboardData | null>(null);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [newCat, setNewCat] = useState("");
@@ -74,20 +76,24 @@ export default function Dashboard({ user }: { user: User }) {
     if (!name) return;
     run(async () => { await api("/api/categories", { body: { name } }); setNewCat(""); }, `Kategorie „${name}“ angelegt`);
   };
-  const renameCategory = (id: number, old: string) => {
-    const name = window.prompt("Neuer Name der Kategorie:", old)?.trim();
+  const renameCategory = async (id: number, old: string) => {
+    const answer = await dialogs.prompt({
+      title: "Kategorie umbenennen", label: "Name", initial: old, confirmLabel: "Umbenennen",
+      validate: ({ value }) => (value.trim() ? null : "Bitte einen Namen eingeben"),
+    });
+    const name = answer?.trim();
     if (!name || name === old) return;
     run(() => api(`/api/categories/${id}`, { method: "PATCH", body: { name } }));
   };
-  const deleteCategory = (id: number, name: string, count: number) => {
+  const deleteCategory = async (id: number, name: string, count: number) => {
     const msg = count
       ? `Kategorie „${name}“ löschen? Die ${count} Aufgabe(n) darin bleiben erhalten und stehen danach unter „Ohne Kategorie“.`
       : `Kategorie „${name}“ löschen?`;
-    if (!window.confirm(msg)) return;
+    if (!(await dialogs.confirm({ title: "Kategorie löschen?", message: msg, confirmLabel: "Löschen", danger: true }))) return;
     run(() => api(`/api/categories/${id}`, { method: "DELETE" }), "Kategorie gelöscht");
   };
-  const deleteFile = (f: FileInfo) => {
-    if (!window.confirm(`„${f.name}“ endgültig löschen?`)) return;
+  const deleteFile = async (f: FileInfo) => {
+    if (!(await dialogs.confirm({ title: "Datei löschen?", message: `„${f.name}“ endgültig löschen?`, confirmLabel: "Löschen", danger: true }))) return;
     run(() => api(`/api/files/${f.id}`, { method: "DELETE" }), `${f.name} gelöscht`);
     setResults((r) => r && r.filter((x) => x.id !== f.id));
   };
@@ -100,7 +106,7 @@ export default function Dashboard({ user }: { user: User }) {
         notify(`${file.name} hochgeladen`);
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) {
-          if (!window.confirm(`${file.name} existiert bereits. Überschreiben?`)) continue;
+          if (!(await dialogs.confirm({ title: "Datei überschreiben?", message: `${file.name} existiert bereits. Überschreiben?`, confirmLabel: "Überschreiben", danger: true }))) continue;
           try { await send(true); notify(`${file.name} überschrieben`); } catch (e2) { notify((e2 as Error).message, true); }
         } else {
           notify(`${file.name}: ${(e as Error).message}`, true);

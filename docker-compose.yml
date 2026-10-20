@@ -1,0 +1,74 @@
+# STACK-Editor für Moodle
+# Synology: Container Manager → Projekt → Erstellen → Pfad zu diesem Ordner wählen
+# ("vorhandene docker-compose.yml verwenden"). Danach erreichbar unter http://<NAS-IP>:3000
+#
+# Zwei Container:
+#   db            PostgreSQL – ohne Port nach außen, nur im internen Netz "backend" für die App erreichbar
+#   stack-editor  die Anwendung (Port 3000)
+# Einstellungen (Maxima-Server, Datenbank-Passwort) stehen in der Datei .env neben dieser Datei.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: stack-editor-db
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Berlin
+      - POSTGRES_DB=stack_editor
+      - POSTGRES_USER=stack
+      # Wird nur beim allerersten Start übernommen – danach nicht mehr ändern (siehe README)
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-stack-editor}
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # Datenbankdateien (Docker-Volume, Sicherung per pg_dump – siehe README)
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stack -d stack_editor"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # bewusst keine "ports:" – die Datenbank ist von außen nicht erreichbar
+
+  stack-editor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stack-editor:latest
+    container_name: stack-editor
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"            # links: Port auf der Synology – bei Bedarf ändern, z. B. "8090:3000"
+    environment:
+      - TZ=Europe/Berlin
+      - DATABASE_URL=postgres://stack:${POSTGRES_PASSWORD:-stack-editor}@db:5432/stack_editor
+      - STACK_XML_DIR=/data/xml
+      - STACK_DATA_DIR=/data/db
+      # Optional: erstes Administratorkonto automatisch anlegen (sonst beim ersten Aufruf im Browser)
+      # - ADMIN_USER=admin
+      # - ADMIN_PASSWORD=bitte-aendern
+      # Maxima-Server (goemaxima) für Berechnungen, die die lokale Vorschau nicht kann.
+      # Wird aus der Datei .env neben dieser docker-compose.yml gelesen (leer = nur lokale Vorschau).
+      - MAXIMA_URL=${MAXIMA_URL:-}
+      - MAXIMA_TIMEOUT=${MAXIMA_TIMEOUT:-10000}
+    volumes:
+      # Nur noch für den Umzug: Eine SQLite-Datenbank der Vorversion (data/stack-editor.db) wird beim
+      # ersten Start mit PostgreSQL einmalig übernommen. Gibt es keine, werden die XML-Dateien importiert.
+      - ./data:/data/db
+      - ./xml:/data/xml
+    networks:
+      - backend                # Zugriff auf die Datenbank
+      - frontend               # Port 3000 und Maxima-Server
+    # Falls der Container wegen fehlender Leserechte auf "data"/"xml" nicht startet:
+    # UID/GID deines Synology-Benutzers eintragen (SSH: `id <benutzername>`), z. B.:
+    # user: "1026:100"
+
+networks:
+  backend:
+    internal: true             # kein Zugang nach außen, nur zwischen den beiden Containern
+  frontend: {}
+
+volumes:
+  pgdata:

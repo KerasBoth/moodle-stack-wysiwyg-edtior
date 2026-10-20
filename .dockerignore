@@ -1,0 +1,15 @@
+node_modules
+.next
+public/vendor
+xml
+*.tsbuildinfo
+next-env.d.ts
+.claude
+.git
+Dockerfile
+docker-compose.yml
+.dockerignore
+dist
+data
+.env
+.env*.local

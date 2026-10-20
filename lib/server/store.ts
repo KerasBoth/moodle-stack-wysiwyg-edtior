@@ -5,6 +5,7 @@ import { type Db, isUniqueViolation } from "./sql.ts";
 import { claimOrphans } from "./db.ts";
 import { hashPassword, hashToken, newSessionToken, verifyPassword } from "./password.ts";
 import { describeXml } from "./xmlmeta.ts";
+import { type Person, personLabel } from "../people.ts";
 
 export class StoreError extends Error {
   status: number;
@@ -26,17 +27,49 @@ const count = async (db: Db, sql: string, params: unknown[] = []) =>
 
 // ---- Benutzer ---------------------------------------------------------------------------
 
-export interface User { id: number; username: string; isAdmin: boolean; createdAt: string }
+export interface User { id: number; username: string; firstName: string; lastName: string; isAdmin: boolean; createdAt: string }
 
-interface UserRow { id: number; username: string; is_admin: number; created_at: string; password_hash: string }
-const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, isAdmin: !!r.is_admin, createdAt: r.created_at });
+interface UserRow { id: number; username: string; first_name: string; last_name: string; is_admin: number; created_at: string; password_hash: string }
+const toUser = (r: UserRow): User => ({
+  id: r.id, username: r.username, firstName: r.first_name, lastName: r.last_name, isAdmin: !!r.is_admin, createdAt: r.created_at,
+});
+
+const MAX_NAME = 80;
+function checkNames(firstName: string, lastName: string): [string, string] {
+  firstName = firstName.trim();
+  lastName = lastName.trim();
+  if (firstName.length > MAX_NAME || lastName.length > MAX_NAME) {
+    throw new StoreError(`Vor- und Nachname dürfen höchstens ${MAX_NAME} Zeichen lang sein`, 400);
+  }
+  return [firstName, lastName];
+}
 
 export function countUsers(db: Db): Promise<number> {
   return count(db, "FROM users");
 }
 
-export async function listUsers(db: Db): Promise<User[]> {
-  return (await db.query<UserRow>("SELECT * FROM users ORDER BY lower(username)")).map(toUser);
+export async function listUsers(db: Db): Promise<(User & { fileCount: number; categoryCount: number })[]> {
+  const rows = await db.query<UserRow & { file_count: number; category_count: number }>(
+    `SELECT u.*,
+       (SELECT CAST(COUNT(*) AS INTEGER) FROM files f WHERE f.owner_id = u.id) AS file_count,
+       (SELECT CAST(COUNT(*) AS INTEGER) FROM categories c WHERE c.owner_id = u.id) AS category_count
+     FROM users u ORDER BY lower(u.username)`,
+  );
+  return rows.map((r) => ({ ...toUser(r), fileCount: r.file_count, categoryCount: r.category_count }));
+}
+
+/** Alle anderen Benutzer als Personenverzeichnis (z. B. zum Teilen), sortiert nach Anzeigename. */
+export async function listPeople(db: Db, exceptUserId: number): Promise<Person[]> {
+  const rows = await db.query<UserRow>("SELECT * FROM users WHERE id <> $1", [exceptUserId]);
+  return rows
+    .map((r): Person => ({ id: r.id, username: r.username, firstName: r.first_name, lastName: r.last_name }))
+    .sort((a, b) => personLabel(a).localeCompare(personLabel(b), "de"));
+}
+
+export async function setUserNames(db: Db, userId: number, firstName: string, lastName: string) {
+  [firstName, lastName] = checkNames(firstName, lastName);
+  const row = await db.get<{ id: number }>("UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3 RETURNING id", [firstName, lastName, userId]);
+  if (!row) throw new StoreError("Benutzer nicht gefunden", 404);
 }
 
 function checkCredentials(username: string, password: string) {
@@ -46,13 +79,14 @@ function checkCredentials(username: string, password: string) {
   if (password.length < 8) throw new StoreError("Das Passwort muss mindestens 8 Zeichen lang sein");
 }
 
-export async function createUser(db: Db, username: string, password: string, isAdmin: boolean): Promise<User> {
+export async function createUser(db: Db, username: string, password: string, isAdmin: boolean, names: { firstName?: string; lastName?: string } = {}): Promise<User> {
   username = username.trim();
   checkCredentials(username, password);
+  const [firstName, lastName] = checkNames(names.firstName ?? "", names.lastName ?? "");
   try {
     const row = await db.get<UserRow>(
-      "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES ($1, $2, $3, $4) RETURNING *",
-      [username, hashPassword(password), isAdmin ? 1 : 0, now()],
+      "INSERT INTO users (username, first_name, last_name, password_hash, is_admin, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [username, firstName, lastName, hashPassword(password), isAdmin ? 1 : 0, now()],
     );
     // Der erste Administrator übernimmt alle herrenlosen Daten (Import, Altbestand)
     if (isAdmin) await claimOrphans(db, row!.id);

@@ -11,8 +11,9 @@ import Database from "better-sqlite3";
 import { type Db, POSTGRES_MIGRATIONS, SQLITE_MIGRATIONS, openPostgresDb, openSqliteDb } from "../lib/server/db.ts";
 import {
   StoreError, countUsers, createCategory, createFile, createUser, dashboard, deleteCategory, deleteUser,
-  getFile, listCategories, listFiles, login, logout, renameCategory, updateFile, userForToken,
+  getFile, listCategories, listFiles, listPeople, listUsers, login, logout, renameCategory, setUserNames, updateFile, userForToken,
 } from "../lib/server/store.ts";
+import { personLabel, personName } from "../lib/people.ts";
 import { hashPassword, verifyPassword } from "../lib/server/password.ts";
 
 const sample = readFileSync(`xml/${readdirSync("xml").find((x) => x.endsWith(".xml"))!}`, "utf8");
@@ -68,6 +69,7 @@ for (const driver of DRIVERS) {
       assert.equal(await countUsers(db), 0);
       const admin = await createUser(db, "admin", "geheim123", true);
       assert.equal(admin.isAdmin, true);
+      assert.deepEqual((await listUsers(db)).map((u) => [u.fileCount, u.categoryCount]), [[0, 0]]);
       await assert.rejects(createUser(db, "ADMIN", "geheim123", false), status(409));
       await assert.rejects(createUser(db, "x", "geheim123", false), StoreError);
       await assert.rejects(createUser(db, "bob", "kurz", false), StoreError);
@@ -81,6 +83,20 @@ for (const driver of DRIVERS) {
       const bob = await createUser(db, "bob", "geheim123", false);
       await deleteUser(db, bob.id);
       assert.equal(await countUsers(db), 1);
+    });
+
+    test("user names and people directory", async () => {
+      const db = await open();
+      const a = await createUser(db, "admin", "geheim123", true, { firstName: " Anna ", lastName: "Schmidt" });
+      assert.equal(a.firstName, "Anna");
+      const b = await createUser(db, "bob", "geheim123", false);
+      assert.equal(personName(b), "bob");
+      assert.equal(personLabel(a), "Anna Schmidt (admin)");
+      await setUserNames(db, b.id, "Bob", "Meier");
+      assert.deepEqual((await listPeople(db, a.id)).map((p) => p.username), ["bob"]);
+      await assert.rejects(setUserNames(db, 9999, "X", "Y"), status(404));
+      await assert.rejects(setUserNames(db, b.id, "x".repeat(81), ""), status(400));
+      await assert.rejects(createUser(db, "carl", "geheim123", false, { lastName: "y".repeat(81) }), status(400));
     });
 
     test("files, categories, conflicts and dashboard", async () => {

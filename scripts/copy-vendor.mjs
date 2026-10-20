@@ -1,4 +1,4 @@
-// Kopiert MathJax und JSXGraph nach public/vendor, damit die Vorschau offline funktioniert.
+// Kopiert MathJax, JSXGraph und die MathLive-Schriften nach public/vendor, damit die Vorschau offline funktioniert.
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,7 @@ const copies = [
   ["mathjax/es5", "mathjax"],
   ["jsxgraph/distrib/jsxgraphcore.js", "jsxgraph/jsxgraphcore.js"],
   ["jsxgraph/distrib/jsxgraph.css", "jsxgraph/jsxgraph.css"],
+  ["mathlive/fonts", "mathlive/fonts"],
 ];
 
 for (const [from, to] of copies) {
@@ -23,4 +24,4 @@ for (const [from, to] of copies) {
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(src, dest, { recursive: true });
 }
-console.log("[copy-vendor] MathJax & JSXGraph nach public/vendor kopiert");
+console.log("[copy-vendor] MathJax, JSXGraph & MathLive-Schriften nach public/vendor kopiert");

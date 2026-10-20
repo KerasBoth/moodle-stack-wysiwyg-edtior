@@ -187,11 +187,11 @@ async function migrate(db: Db): Promise<boolean> {
       for (let v = version; v < SQLITE_MIGRATIONS.length; v++) {
         await db.tx(async (t) => {
           await t.exec(SQLITE_MIGRATIONS[v]);
+          if ((raw.pragma("foreign_key_check") as unknown[]).length) {
+            throw new Error("Migration verletzt Fremdschlüssel (PRAGMA foreign_key_check)");
+          }
           await t.exec(`PRAGMA user_version = ${v + 1}`);
         });
-      }
-      if (migrating && (raw.pragma("foreign_key_check") as unknown[]).length) {
-        throw new Error("Migration verletzt Fremdschlüssel (PRAGMA foreign_key_check)");
       }
     } finally {
       if (migrating) raw.pragma("foreign_keys = ON");

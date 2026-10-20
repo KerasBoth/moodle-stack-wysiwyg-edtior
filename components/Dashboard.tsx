@@ -245,7 +245,7 @@ function FileRows({ files, showCategory, onDelete, onShare }: { files: FileInfo[
     <ul className="file-rows">
       {files.map((f) => (
         <li key={f.id}>
-          <a href={editorUrl(f)} className={`file-row ${f.role === "owner" ? "has-actions" : ""}`}title={`${f.name} öffnen`}>
+          <a href={editorUrl(f)} className={`file-row ${f.role === "owner" ? "has-actions" : ""}`} title={`${f.name} öffnen`}>
             <IconFile className="file-ico" />
             <span className="file-main">
               <span className="file-q">

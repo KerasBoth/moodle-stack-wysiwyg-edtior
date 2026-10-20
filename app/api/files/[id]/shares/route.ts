@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import { apiError, apiUser, idParam, jsonBody } from "@/lib/server/session";
-import { listShares, setShare } from "@/lib/server/store";
+import { StoreError, listShares, setShare } from "@/lib/server/store";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,9 @@ export async function PUT(req: Request, ctx: Ctx) {
     const body = await jsonBody<{ userId: number; role: "read" | "edit" }>(req);
     const db = await getDb();
     const fileId = idParam((await ctx.params).id);
-    await setShare(db, user.id, fileId, Number(body.userId), body.role as "read" | "edit");
+    const targetId = Number(body.userId);
+    if (!Number.isInteger(targetId) || targetId <= 0) throw new StoreError("Ungültige Benutzer-ID");
+    await setShare(db, user.id, fileId, targetId, body.role as "read" | "edit");
     return NextResponse.json({ shares: await listShares(db, user.id, fileId) });
   } catch (e) {
     return apiError(e);

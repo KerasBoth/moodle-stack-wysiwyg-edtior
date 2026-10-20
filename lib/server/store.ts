@@ -66,9 +66,15 @@ export async function listPeople(db: Db, exceptUserId: number): Promise<Person[]
     .sort((a, b) => personLabel(a).localeCompare(personLabel(b), "de"));
 }
 
-export async function setUserNames(db: Db, userId: number, firstName: string, lastName: string) {
-  [firstName, lastName] = checkNames(firstName, lastName);
-  const row = await db.get<{ id: number }>("UPDATE users SET first_name = $1, last_name = $2 WHERE id = $3 RETURNING id", [firstName, lastName, userId]);
+/** Setzt Vor- und/oder Nachname; ein weggelassener (undefined) Wert bleibt unverändert. */
+export async function setUserNames(db: Db, userId: number, firstName: string | undefined, lastName: string | undefined) {
+  const [first, last] = checkNames(firstName ?? "", lastName ?? "");
+  const sets: string[] = [];
+  const params: unknown[] = [userId];
+  if (firstName !== undefined) { params.push(first); sets.push(`first_name = $${params.length}`); }
+  if (lastName !== undefined) { params.push(last); sets.push(`last_name = $${params.length}`); }
+  if (!sets.length) return;
+  const row = await db.get<{ id: number }>(`UPDATE users SET ${sets.join(", ")} WHERE id = $1 RETURNING id`, params);
   if (!row) throw new StoreError("Benutzer nicht gefunden", 404);
 }
 

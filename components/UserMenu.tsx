@@ -136,7 +136,7 @@ function UsersDialog({ self, onClose, notify }: { self: User; onClose: () => voi
   const remove = async (u: UserRow) => {
     const text = u.fileCount === 0 && u.categoryCount === 0
       ? `Benutzer „${u.username}“ löschen?`
-      : `Benutzer „${u.username}“ und seine ${u.fileCount} Aufgabe(n) und ${u.categoryCount} Kategorie(n) endgültig löschen? Mit ihm geteilte Aufgaben anderer bleiben erhalten.`;
+      : `Benutzer „${u.username}“ und seine ${u.fileCount} Aufgabe(n) und ${u.categoryCount} Kategorie(n) endgültig löschen? Seine Aufgaben verschwinden auch für Personen, mit denen er sie geteilt hat. Mit ihm geteilte Aufgaben anderer bleiben erhalten.`;
     if (!window.confirm(text)) return;
     try {
       await api(`/api/users/${u.id}`, { method: "DELETE" });

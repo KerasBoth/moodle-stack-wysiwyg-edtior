@@ -95,6 +95,8 @@ for (const driver of DRIVERS) {
       assert.equal(personLabel(a), "Anna Schmidt (admin)");
       await setUserNames(db, b.id, "Bob", "Meier");
       assert.deepEqual((await listPeople(db, a.id)).map((p) => p.username), ["bob"]);
+      await setUserNames(db, b.id, "Rob", undefined);
+      assert.deepEqual((await listPeople(db, a.id)).map((p) => [p.firstName, p.lastName]), [["Rob", "Meier"]]);
       await assert.rejects(setUserNames(db, 9999, "X", "Y"), status(404));
       await assert.rejects(setUserNames(db, b.id, "x".repeat(81), ""), status(400));
       await assert.rejects(createUser(db, "carl", "geheim123", false, { lastName: "y".repeat(81) }), status(400));

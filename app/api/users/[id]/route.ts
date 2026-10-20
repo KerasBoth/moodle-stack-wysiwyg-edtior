@@ -18,7 +18,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (!hasPassword && !hasNames) throw new StoreError("Nichts zu ändern");
     if (hasPassword) await setPassword(db, id, body.password as string);
     if (hasNames) {
-      await setUserNames(db, id, typeof body.firstName === "string" ? body.firstName : "", typeof body.lastName === "string" ? body.lastName : "");
+      await setUserNames(db, id, typeof body.firstName === "string" ? body.firstName : undefined, typeof body.lastName === "string" ? body.lastName : undefined);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -380,9 +380,10 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   /** Erst in der Datenbank speichern, dann die XML-Datei für den Moodle-Import herunterladen. */
   const saveAndDownload = useCallback(async () => {
+    if (file?.role === "read") { download(); return; }
     const saved = await saveToServer();
     if (saved) download(saved.name);
-  }, [saveToServer, download]);
+  }, [file?.role, saveToServer, download]);
 
   const copyXml = useCallback(async () => {
     await navigator.clipboard.writeText(xmlText());
@@ -515,7 +516,11 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                 <button className="mi" onClick={newFile}><span><IconPlus /> Neue Aufgabe</span></button>
                 <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> XML hochladen …</span><small>oder ins Fenster ziehen</small></button>
                 <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
-                <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> Speichern &amp; Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                {readOnly ? (
+                  <button className="mi" onClick={() => { setMenu(null); download(); }}><span><IconDownload /> Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                ) : (
+                  <button className="mi" onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> Speichern &amp; Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                )}
                 <button className="mi" onClick={() => { setMenu(null); copyXml(); }}><span><IconCopy /> XML kopieren</span></button>
                 <div className="burger-sep">Kategorie</div>
                 {shared ? (

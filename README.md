@@ -34,10 +34,14 @@ Benutzer, Kategorien und XML-Dateien liegen in einer Datenbank:
 - **PostgreSQL**, sobald `DATABASE_URL` gesetzt ist. Im Docker-Compose geschieht das automatisch, siehe unten.
 - **SQLite** ohne `DATABASE_URL`: eine Datei `data/stack-editor.db` (Ordner per `STACK_DATA_DIR`). Das ist praktisch für die lokale Entwicklung ohne Datenbankserver.
 
-Beide verwenden dieselben Abfragen. Startet die App mit einer **leeren** PostgreSQL-Datenbank und findet eine vorhandene `stack-editor.db`, übernimmt sie einmalig deren Benutzer, Kategorien, Aufgaben und Versionen. Die SQLite-Datei bleibt dabei unverändert.
+Beide verwenden dieselben Abfragen. Startet die App mit einer **leeren** PostgreSQL-Datenbank und findet eine vorhandene `stack-editor.db`, übernimmt sie einmalig deren Benutzer, Kategorien, Aufgaben und Versionen. Die SQLite-Datei bleibt dabei unverändert. Daten ohne Besitzer werden dabei dem Administrator mit der niedrigsten ID zugewiesen.
+
+> **Upgrade-Hinweis:** Beim ersten Start nach dem Update werden **alle vorhandenen Aufgaben und Kategorien dem Administrator mit der niedrigsten ID zugewiesen**. Alle anderen Benutzer sehen danach ein leeres Dashboard, bis dieser Administrator Aufgaben mit ihnen teilt.
 
 - **Erster Start:** Gibt es noch keinen Benutzer, legt die Anmeldeseite das erste Konto an. Dieses Konto ist Administrator. Alternativ legen `ADMIN_USER` und `ADMIN_PASSWORD` das Konto beim Start automatisch an.
-- **Weitere Benutzer** legen Administratoren über das Benutzermenü oben rechts an (*Benutzerverwaltung*). Dort lassen sich auch Passwörter zurücksetzen. Jeder Benutzer kann sein eigenes Passwort ändern.
+- **Weitere Benutzer** legen Administratoren über das Benutzermenü oben rechts an (*Benutzerverwaltung*). Dort lassen sich auch Passwörter zurücksetzen und optionale Vor- und Nachnamen pflegen. Jeder Benutzer kann sein eigenes Passwort ändern. Beim Löschen eines Benutzers werden auch seine Aufgaben, Kategorien und Freigaben gelöscht, ebenso für Personen, mit denen er Aufgaben geteilt hat.
+- **Private Bereiche:** Jeder Benutzer sieht nur seine eigenen Aufgaben und Kategorien sowie die mit ihm geteilten Aufgaben. Das gilt auch für Administratoren: Ihre Rechte beschränken sich auf die Benutzerverwaltung.
+- **Teilen:** Der Besitzer teilt eine Aufgabe mit Benutzern aus einer Liste, entweder als „Lesen“ (ansehen und herunterladen) oder „Bearbeiten“ (Inhalt ändern, aber nicht umbenennen, verschieben, löschen oder weiterteilen). Geteilte Aufgaben erscheinen unter „Mit mir geteilt“.
 - **Alte XML-Dateien:** Beim Anlegen der Datenbank werden alle `*.xml` aus `xml/` (bzw. `STACK_XML_DIR`) einmalig in die Kategorie „Importiert“ übernommen.
 - **Versionen:** Beim Speichern bleiben die letzten 20 Fassungen jeder Datei in der Tabelle `file_versions` erhalten. Sie ersetzen die früheren `.bak`-Dateien.
 - **Gleichzeitiges Bearbeiten:** Hat jemand anderes die Datei inzwischen gespeichert, fragt der Editor vor dem Überschreiben nach.

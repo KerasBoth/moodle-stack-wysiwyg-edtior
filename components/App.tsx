@@ -7,7 +7,7 @@ import { type Quiz, type StackQuestion, newQuestion, newUid } from "@/lib/stack/
 import { type PreviewBuild, buildPreview } from "@/lib/stack/preview";
 import { type CasRequest, type CasResult, casExpressions } from "@/lib/stack/maximaprogram";
 import { parseQuiz, writeQuiz } from "@/lib/stack/xml";
-import type { Category, FileFull, FileInfo, User } from "@/lib/server/store";
+import type { Category, FileFull, FileInfo, FileRole, User } from "@/lib/server/store";
 import { api, ApiError } from "@/lib/client/api";
 import {
   IconBook, IconChat, IconCode, IconCopy, IconDownload, IconFile, IconFlask, IconGear, IconHome, IconInfo,
@@ -39,7 +39,7 @@ export interface CasStatus { configured: boolean; loading: boolean; server?: str
 const CAS_MODE_KEY = "stack-editor-cas-mode";
 
 /** Die im Editor geöffnete Datei aus der Datenbank. */
-interface OpenFile { id: number; name: string; updatedAt: string }
+interface OpenFile { id: number; name: string; updatedAt: string; role: FileRole; ownerName: string }
 
 const draftKey = (userId: number) => `stack-editor-draft-v2-${userId}`;
 
@@ -113,7 +113,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       }
       setQuiz(qz);
       setSel(0);
-      setFile(meta && { id: meta.id, name: meta.name, updatedAt: meta.updatedAt });
+      setFile(meta && { id: meta.id, name: meta.name, updatedAt: meta.updatedAt, role: meta.role, ownerName: meta.ownerName });
       if (meta) setCategoryId(meta.categoryId);
       setDirty(false);
       const first = qz.items.find((i) => i.kind === "stack");
@@ -157,7 +157,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       } catch { /* defekter Entwurf wird ignoriert */ }
       const restore = (d: Draft) => {
         setQuiz(d.quiz);
-        setFile(d.file ?? null);
+        setFile(d.file ? { ...d.file, role: d.file.role ?? "owner", ownerName: d.file.ownerName ?? "" } : null);
         setCategoryId(d.categoryId ?? null);
         setSel(d.sel ?? 0);
         setSeed(d.seed ?? 1);
@@ -310,6 +310,10 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   /** Speichert in der Datenbank; neue Aufgaben fragen einmalig nach dem Dateinamen. Liefert die gespeicherte Datei. */
   const saveToServer = useCallback(async (): Promise<FileInfo | null> => {
+    if (file?.role === "read") {
+      notify("Nur Lesezugriff – speichern nicht möglich", true);
+      return null;
+    }
     try {
       let saved: FileInfo;
       if (file) {
@@ -338,7 +342,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
           saved = (await post(true)).file;
         }
       }
-      setFile({ id: saved.id, name: saved.name, updatedAt: saved.updatedAt });
+      setFile({ id: saved.id, name: saved.name, updatedAt: saved.updatedAt, role: saved.role, ownerName: saved.ownerName });
       setCategoryId(saved.categoryId);
       setDirty(false);
       refreshFiles();
@@ -361,6 +365,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       notify(e instanceof Error ? e.message : String(e), true);
     }
   }, [file, categories, notify]);
+
+  const readOnly = file?.role === "read";
+  const shared = !!file && file.role !== "owner";
 
   const download = useCallback((name?: string) => {
     const blob = new Blob([xmlText()], { type: "application/xml" });
@@ -492,7 +499,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const props: SectionProps | null = q ? { q, update, build, seed, setSeed, quiz } : null;
 
   return (
-    <div className="app">
+    <div className={`app${readOnly ? " has-band" : ""}`}>
       <header className="topbar">
         <div className="menu">
           <button className={`tbtn burger${menu ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!menu} aria-label="Menü"
@@ -507,16 +514,20 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                 <div className="burger-sep">Datei</div>
                 <button className="mi" onClick={newFile}><span><IconPlus /> Neue Aufgabe</span></button>
                 <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> XML hochladen …</span><small>oder ins Fenster ziehen</small></button>
-                <button className="mi" onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
-                <button className="mi" onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> Speichern &amp; Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
+                <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> Speichern &amp; Download</span><kbd>Strg+Umschalt+S</kbd></button>
                 <button className="mi" onClick={() => { setMenu(null); copyXml(); }}><span><IconCopy /> XML kopieren</span></button>
                 <div className="burger-sep">Kategorie</div>
-                <div className="burger-field">
-                  <select className="sel" value={categoryId ?? ""} onChange={(e) => changeCategory(e.target.value ? Number(e.target.value) : null)} aria-label="Kategorie dieser Datei">
-                    <option value="">Ohne Kategorie</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+                {shared ? (
+                  <div className="mi muted-mi"><small>Geteilt von {file?.ownerName}</small></div>
+                ) : (
+                  <div className="burger-field">
+                    <select className="sel" value={categoryId ?? ""} onChange={(e) => changeCategory(e.target.value ? Number(e.target.value) : null)} aria-label="Kategorie dieser Datei">
+                      <option value="">Ohne Kategorie</option>
+                      {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="burger-sep">Ansicht</div>
                 <button className="mi" onClick={() => { setMenu(null); setShowRef(true); }}><span><IconBook /> Funktionsreferenz</span></button>
                 <button className="mi" role="menuitemcheckbox" aria-checked={showPreview} onClick={() => setShowPreview(!showPreview)}>
@@ -526,9 +537,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                 {files.length === 0 && <div className="mi muted-mi"><small>Noch keine Dateien gespeichert</small></div>}
                 <div className="menu-scroll short">
                   {files.slice(0, 10).map((f) => (
-                    <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)} title={`${f.name}${f.categoryName ? ` (${f.categoryName})` : ""}`}>
+                    <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)} title={`${f.name}${f.role !== "owner" ? ` (geteilt von ${f.ownerName})` : f.categoryName ? ` (${f.categoryName})` : ""}`}>
                       <span className="mi-file"><IconFile /><span className="mi-file-name">{f.questions[0] ?? f.name}</span></span>
-                      <small>{new Date(f.updatedAt).toLocaleDateString("de-DE")}</small>
+                      <small>{f.role !== "owner" ? `${f.ownerName} · ` : ""}{new Date(f.updatedAt).toLocaleDateString("de-DE")}</small>
                     </button>
                   ))}
                 </div>
@@ -547,12 +558,15 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
             {fileName ? <b>{fileName}</b> : <i>nicht gespeichert</i>}
             {dirty && <span className="dirty-dot" title="Ungespeicherte Änderungen" />}
           </span>
-          <span className="doc-cat" title="Kategorie (im Menü änderbar)">{categories.find((c) => c.id === categoryId)?.name ?? "Ohne Kategorie"}</span>
+          {shared
+            ? <span className="doc-cat" title="Diese Datei gehört einem anderen Nutzer">Geteilt von {file?.ownerName}</span>
+            : <span className="doc-cat" title="Kategorie (im Menü änderbar)">{categories.find((c) => c.id === categoryId)?.name ?? "Ohne Kategorie"}</span>}
         </div>
         <div className="spacer" />
-        <button className="tbtn primary" onClick={() => saveToServer()} title="In der Datenbank speichern (Strg+S)"><IconSave /> Speichern</button>
+        <button className="tbtn primary" disabled={readOnly} onClick={() => saveToServer()} title={readOnly ? "Nur Lesezugriff" : "In der Datenbank speichern (Strg+S)"}><IconSave /> Speichern</button>
         <UserMenu user={user} notify={notify} />
       </header>
+      {readOnly && <div className="readonly-band" role="status">Nur lesen – geteilt von {file?.ownerName}</div>}
 
       <div className={`workspace ${showPreview ? "" : "no-preview"}`} style={{ ["--preview-w" as string]: `${previewW}%` }}>
         <aside className="sidebar">

@@ -48,14 +48,49 @@ export function Select({ value, onChange, options }: { value: string; onChange: 
 
 // ---------------------------------------------------------------------------------------------
 
-export function GeneralSection({ q, update }: SectionProps) {
+export interface FileInfoProps {
+  name: string | null;
+  suggestedName: string;
+  canRename: boolean;
+  ownerName: string;
+  /** Liefert eine Fehlermeldung oder null. */
+  onRename: (name: string) => Promise<string | null>;
+}
+
+export function GeneralSection({ q, update, fileInfo }: SectionProps & { fileInfo: FileInfoProps }) {
   const [tag, setTag] = useState("");
+  const [fileDraft, setFileDraft] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renaming = useRef(false);
+  const shownName = fileDraft ?? fileInfo.name ?? "";
+  const commitRename = async () => {
+    if (fileDraft === null || renaming.current) return;
+    const v = fileDraft.trim();
+    if (!v || v === fileInfo.name) { setFileDraft(null); setRenameError(null); return; }
+    renaming.current = true;
+    try {
+      const err = await fileInfo.onRename(v);
+      setRenameError(err);
+      setFileDraft(null);
+    } finally {
+      renaming.current = false;
+    }
+  };
   return (
     <div className="section">
       <SectionHead title="Allgemein" desc="Name, Bewertung und Fragenotiz" />
       <div className="card"><div className="card-body">
         <Field label="Fragetitel">
           <input className="inp" value={q.name} onChange={(e) => update((x) => { x.name = e.target.value; })} />
+        </Field>
+        <Field label="Dateiname" hint={fileInfo.name !== null && !fileInfo.canRename ? `Geteilt von ${fileInfo.ownerName}` : undefined}>
+          <input className="inp" value={shownName} disabled={fileInfo.name === null}
+            readOnly={fileInfo.name !== null && !fileInfo.canRename}
+            placeholder={fileInfo.name === null ? `wird beim Speichern: ${fileInfo.suggestedName}` : undefined}
+            onChange={(e) => { setFileDraft(e.target.value); setRenameError(null); }}
+            onBlur={commitRename}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitRename(); } }} />
+          {renameError && <div className="issue error" style={{ marginTop: 6 }}>{renameError}</div>}
         </Field>
         <div className="grid4">
           <Field label="Erreichbare Punkte">

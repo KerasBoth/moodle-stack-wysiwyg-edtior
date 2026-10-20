@@ -20,6 +20,9 @@ import InputsSection from "./sections/InputsSection";
 import PrtsSection from "./sections/PrtsSection";
 import TestsSection from "./sections/TestsSection";
 import UserMenu from "./UserMenu";
+import SaveAsDialog from "./SaveAsDialog";
+import { isModalOpen, useDialogs } from "./Dialogs";
+import { fileNameFromTitle } from "@/lib/filename";
 
 export type Updater = (fn: (q: StackQuestion) => void) => void;
 
@@ -57,7 +60,9 @@ interface AppProps {
 export default function StackEditorApp({ user, initialFileId, startNew, initialCategoryId }: AppProps) {
   const [quiz, setQuiz] = useState<Quiz>(() => ({ items: [{ kind: "stack", q: newQuestion() }] }));
   const [sel, setSel] = useState(0);
+  const dialogs = useDialogs();
   const [file, setFile] = useState<OpenFile | null>(null);
+  const [saveAs, setSaveAs] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId);
   const [categories, setCategories] = useState<Category[]>([]);
   const fileName = file?.name ?? null;
@@ -308,7 +313,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   const xmlText = useCallback(() => writeQuiz(quiz), [quiz]);
 
-  /** Speichert in der Datenbank; neue Aufgaben fragen einmalig nach dem Dateinamen. Liefert die gespeicherte Datei. */
+  /** Speichert in der Datenbank; neue Aufgaben bekommen ohne Rückfrage einen Namen aus dem Aufgabentitel. Liefert die gespeicherte Datei. */
   const saveToServer = useCallback(async (): Promise<FileInfo | null> => {
     if (file?.role === "read") {
       notify("Nur Lesezugriff – speichern nicht möglich", true);
@@ -324,23 +329,18 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
           saved = (await put(false)).file;
         } catch (e) {
           if (!(e instanceof ApiError && e.data.conflict)) throw e;
-          if (!window.confirm(`${e.message}.\n\nTrotzdem mit deinem Stand überschreiben? (Die andere Fassung bleibt als Version erhalten)`)) return null;
+          const ok = await dialogs.confirm({
+            title: "Datei wurde geändert",
+            message: <div style={{ whiteSpace: "pre-line" }}>{`${e.message}.\n\nTrotzdem mit deinem Stand überschreiben? (Die andere Fassung bleibt als Version erhalten)`}</div>,
+            confirmLabel: "Überschreiben", danger: true,
+          });
+          if (!ok) return null;
           saved = (await put(true)).file;
         }
       } else {
-        const suggestion = (q?.name ?? "stack-aufgabe").replace(/[^\wäöüÄÖÜß() -]+/g, "").trim().replace(/\s+/g, "-") + ".xml";
-        const input = window.prompt("Dateiname der neuen Aufgabe:", suggestion);
-        if (!input) return null;
-        const post = (overwrite: boolean) => api<{ file: FileInfo }>("/api/files", {
-          body: { name: input, content: xmlText(), categoryId, overwrite },
-        });
-        try {
-          saved = (await post(false)).file;
-        } catch (e) {
-          if (!(e instanceof ApiError && e.status === 409)) throw e;
-          if (!window.confirm(`${e.message}. Überschreiben? (Die alte Fassung bleibt als Version erhalten)`)) return null;
-          saved = (await post(true)).file;
-        }
+        saved = (await api<{ file: FileInfo }>("/api/files", {
+          body: { name: fileNameFromTitle(q?.name ?? ""), content: xmlText(), categoryId, autoRename: true },
+        })).file;
       }
       setFile({ id: saved.id, name: saved.name, updatedAt: saved.updatedAt, role: saved.role, ownerName: saved.ownerName });
       setCategoryId(saved.categoryId);
@@ -352,7 +352,40 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       notify(e instanceof Error ? e.message : "Speichern fehlgeschlagen", true);
       return null;
     }
-  }, [file, categoryId, q, xmlText, notify, refreshFiles]);
+  }, [file, categoryId, q, xmlText, notify, refreshFiles, dialogs]);
+
+  /** „Speichern unter“: legt eine eigene Datei an (für den Besitzer der neuen Datei), ohne die geöffnete zu ändern. */
+  const saveAsNew = useCallback(async (name: string, overwrite: boolean): Promise<{ error?: string; exists?: boolean }> => {
+    try {
+      const { file: saved } = await api<{ file: FileInfo }>("/api/files", {
+        body: { name, content: xmlText(), categoryId: file && file.role !== "owner" ? null : categoryId, overwrite },
+      });
+      setFile({ id: saved.id, name: saved.name, updatedAt: saved.updatedAt, role: saved.role, ownerName: saved.ownerName });
+      setCategoryId(saved.categoryId);
+      setDirty(false);
+      refreshFiles();
+      notify(`Gespeichert: ${saved.name}`);
+      setSaveAs(false);
+      return {};
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.data.exists) return { exists: true };
+      return { error: e instanceof Error ? e.message : "Speichern fehlgeschlagen" };
+    }
+  }, [file, categoryId, xmlText, notify, refreshFiles]);
+
+  /** Dateiname ändern (nur Besitzer). Liefert eine Fehlermeldung oder null. */
+  const renameFile = useCallback(async (name: string): Promise<string | null> => {
+    if (!file) return "Datei ist noch nicht gespeichert";
+    try {
+      const { file: f } = await api<{ file: FileInfo }>(`/api/files/${file.id}`, { method: "PUT", body: { name } });
+      setFile((cur) => (cur && cur.id === f.id ? { ...cur, name: f.name, updatedAt: f.updatedAt } : cur));
+      refreshFiles();
+      notify(`Umbenannt: ${f.name}`);
+      return null;
+    } catch (e) {
+      return e instanceof ApiError && e.status === 409 && e.data.exists ? `${name} existiert bereits.` : e instanceof Error ? e.message : "Umbenennen fehlgeschlagen";
+    }
+  }, [file, notify, refreshFiles]);
 
   /** Kategorie wechseln – bei gespeicherten Dateien sofort in der Datenbank. */
   const changeCategory = useCallback(async (id: number | null) => {
@@ -395,6 +428,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       if (e.key === "Escape") setMenu(null);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
+        if (isModalOpen()) return;
         if (e.shiftKey) saveAndDownload();
         else saveToServer();
       }
@@ -516,6 +550,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                 <button className="mi" onClick={newFile}><span><IconPlus /> Neue Aufgabe</span></button>
                 <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> XML hochladen …</span><small>oder ins Fenster ziehen</small></button>
                 <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
+                <button className="mi" onClick={() => { setMenu(null); setSaveAs(true); }}><span><IconSave /> Speichern unter …</span></button>
                 {readOnly ? (
                   <button className="mi" onClick={() => { setMenu(null); download(); }}><span><IconDownload /> Download</span><kbd>Strg+Umschalt+S</kbd></button>
                 ) : (
@@ -607,7 +642,10 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         </aside>
 
         <main className="main">
-          {props && section === "general" && <GeneralSection {...props} />}
+          {props && section === "general" && <GeneralSection {...props} fileInfo={{
+            name: file?.name ?? null, suggestedName: fileNameFromTitle(q?.name ?? ""), canRename: file?.role === "owner",
+            ownerName: file?.ownerName ?? "", onRename: renameFile,
+          }} />}
           {props && section === "variables" && <VariablesSection {...props} />}
           {props && section === "text" && <QuestionTextSection {...props} />}
           {props && section === "inputs" && <InputsSection {...props} />}
@@ -625,6 +663,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         )}
       </div>
 
+      {saveAs && <SaveAsDialog initialName={file?.name ?? fileNameFromTitle(q?.name ?? "")} onSave={saveAsNew} onClose={() => setSaveAs(false)} />}
       {showRef && <Reference onClose={() => setShowRef(false)} notify={notify} />}
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
       {dragOver && <div className="dropzone">XML-Datei hier ablegen</div>}

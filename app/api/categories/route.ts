@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await apiUser();
   if (user instanceof Response) return user;
-  return NextResponse.json({ categories: await listCategories(await getDb()) });
+  return NextResponse.json({ categories: await listCategories(await getDb(), user.id) });
 }
 
 export async function POST(req: Request) {

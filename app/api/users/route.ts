@@ -17,8 +17,11 @@ export async function POST(req: Request) {
   const user = await apiUser({ admin: true });
   if (user instanceof Response) return user;
   try {
-    const body = await jsonBody<{ username: string; password: string; isAdmin: boolean }>(req);
-    const created = await createUser(await getDb(), String(body.username ?? ""), String(body.password ?? ""), !!body.isAdmin);
+    const body = await jsonBody<{ username: string; password: string; isAdmin: boolean; firstName: string; lastName: string }>(req);
+    const created = await createUser(await getDb(), String(body.username ?? ""), String(body.password ?? ""), !!body.isAdmin, {
+      firstName: typeof body.firstName === "string" ? body.firstName : undefined,
+      lastName: typeof body.lastName === "string" ? body.lastName : undefined,
+    });
     return NextResponse.json({ user: created }, { status: 201 });
   } catch (e) {
     return apiError(e);

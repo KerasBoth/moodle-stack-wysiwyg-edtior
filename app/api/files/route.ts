@@ -13,10 +13,12 @@ export async function GET(req: Request) {
   try {
     const sp = new URL(req.url).searchParams;
     const cat = sp.get("category");
-    const files = await listFiles(await getDb(), {
+    const scope = sp.get("scope");
+    const files = await listFiles(await getDb(), user.id, {
       category: !cat ? undefined : cat === "none" ? null : Number(cat),
       limit: sp.get("limit") ? Number(sp.get("limit")) : undefined,
       search: sp.get("q") ?? undefined,
+      scope: scope === "shared" || scope === "own" ? scope : undefined,
     });
     return NextResponse.json({ files });
   } catch (e) {

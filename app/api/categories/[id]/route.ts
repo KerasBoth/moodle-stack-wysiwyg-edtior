@@ -10,7 +10,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (user instanceof Response) return user;
   try {
     const body = await jsonBody<{ name: string }>(req);
-    await renameCategory(await getDb(), idParam((await ctx.params).id), String(body.name ?? ""));
+    await renameCategory(await getDb(), user.id, idParam((await ctx.params).id), String(body.name ?? ""));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return apiError(e);
@@ -22,7 +22,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await apiUser();
   if (user instanceof Response) return user;
   try {
-    await deleteCategory(await getDb(), idParam((await ctx.params).id));
+    await deleteCategory(await getDb(), user.id, idParam((await ctx.params).id));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return apiError(e);

@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await apiUser();
   if (user instanceof Response) return user;
-  return NextResponse.json(await dashboard(await getDb()));
+  return NextResponse.json(await dashboard(await getDb(), user.id));
 }

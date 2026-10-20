@@ -13,7 +13,7 @@ export async function GET(_req: Request, ctx: Ctx) {
   const user = await apiUser();
   if (user instanceof Response) return user;
   try {
-    return NextResponse.json({ file: await getFile(await getDb(), idParam((await ctx.params).id)) });
+    return NextResponse.json({ file: await getFile(await getDb(), user.id, idParam((await ctx.params).id)) });
   } catch (e) {
     return apiError(e);
   }
@@ -24,13 +24,13 @@ export async function PUT(req: Request, ctx: Ctx) {
   if (user instanceof Response) return user;
   try {
     const body = await jsonBody<{ content: string; name: string; categoryId: number | null; baseUpdatedAt: string; force: boolean }>(req);
-    const file = await updateFile(await getDb(), idParam((await ctx.params).id), {
+    const file = await updateFile(await getDb(), user.id, idParam((await ctx.params).id), {
       content: typeof body.content === "string" ? body.content : undefined,
       name: typeof body.name === "string" ? body.name : undefined,
-      categoryId: body.categoryId,
+      categoryId: "categoryId" in body ? body.categoryId : undefined,
       baseUpdatedAt: typeof body.baseUpdatedAt === "string" ? body.baseUpdatedAt : undefined,
       force: !!body.force,
-    }, user.id);
+    });
     return NextResponse.json({ file });
   } catch (e) {
     return apiError(e);
@@ -41,7 +41,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   const user = await apiUser();
   if (user instanceof Response) return user;
   try {
-    await deleteFile(await getDb(), idParam((await ctx.params).id));
+    await deleteFile(await getDb(), user.id, idParam((await ctx.params).id));
     return NextResponse.json({ ok: true });
   } catch (e) {
     return apiError(e);

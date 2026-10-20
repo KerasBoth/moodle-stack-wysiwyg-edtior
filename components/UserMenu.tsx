@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { User } from "@/lib/server/store";
 import { api, logoutAndLeave } from "@/lib/client/api";
 import { personName } from "@/lib/people";
-import { IconLogout, IconPlus, IconTrash, IconUser, IconX } from "./icons";
+import { IconLogout, IconPlus, IconTrash, IconUser } from "./icons";
+import { Modal } from "./Modal";
 
 type Notify = (msg: string, err?: boolean) => void;
 
@@ -33,25 +34,6 @@ export default function UserMenu({ user, notify }: { user: User; notify: Notify 
       )}
       {dialog === "password" && <PasswordDialog onClose={() => setDialog(null)} notify={notify} />}
       {dialog === "users" && <UsersDialog self={user} onClose={() => setDialog(null)} notify={notify} />}
-    </div>
-  );
-}
-
-export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${wide ? "wide" : ""}`} role="dialog" aria-label={title}>
-        <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="btn ghost small" onClick={onClose} aria-label="Schließen"><IconX /></button>
-        </div>
-        <div className="modal-body">{children}</div>
-      </div>
     </div>
   );
 }

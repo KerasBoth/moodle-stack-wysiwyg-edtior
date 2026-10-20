@@ -7,7 +7,7 @@ import type { FileInfo, Share, ShareRole } from "@/lib/server/store";
 import { personLabel, personName, type Person } from "@/lib/people";
 import { api } from "@/lib/client/api";
 import { IconShare, IconTrash } from "./icons";
-import { Modal } from "./UserMenu";
+import { Modal } from "./Modal";
 
 const ROLES: { value: ShareRole; label: string }[] = [
   { value: "read", label: "Lesen" },

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { DialogProvider } from "@/components/Dialogs";
 
 export const metadata: Metadata = {
   title: "STACK-Editor",
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
-      <body>{children}</body>
+      <body><DialogProvider>{children}</DialogProvider></body>
     </html>
   );
 }

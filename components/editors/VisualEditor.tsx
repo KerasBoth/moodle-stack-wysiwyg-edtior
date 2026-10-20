@@ -172,9 +172,9 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
 
   const insertMath = async () => {
     const saved = saveSelection();
-    const tex = await dialogs.prompt({ title: "LaTeX-Formel einfügen", label: "Formel", mono: true, message: "Wird als \( … \) eingefügt.", confirmLabel: "Einfügen" });
+    const tex = await dialogs.prompt({ title: "LaTeX-Formel einfügen", label: "Formel", mono: true, message: "Wird als \\( … \\) eingefügt.", confirmLabel: "Einfügen" });
     if (!restoreSelection(saved) || !tex) return;
-    exec("insertText", `\(${tex}\)`);
+    exec("insertText", `\\(${tex}\\)`);
   };
 
   const onDoubleClick = async (e: React.MouseEvent) => {

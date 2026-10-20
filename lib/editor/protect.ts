@@ -1,11 +1,11 @@
 // Geschützte Konstrukte des Texteditors: Formeln, {@…@}, [[…]], <script> usw. werden zu nicht editierbaren
 // Kästchen und beim Zurückschreiben unverändert aus dem Speicher eingesetzt. Reine String-Funktionen ohne DOM.
 
-import { FORMULA_PATTERN, HTML_COMMENT_PATTERN, PROTECTED_PATTERNS, parseFormula } from "./formula.ts";
+import { PROTECT_PATTERN, parseFormula } from "./formula.ts";
 
 // Formeln zuerst (eine Formel mit {@…@} ist ein Kästchen). Kommentare werden mit erkannt, aber unverändert
-// durchgereicht. Ohne Flag "m": HTML_COMMENT_PATTERN braucht $ = Ende der Eingabe.
-export const PROTECT_RE = new RegExp([FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...PROTECTED_PATTERNS].join("|"), "gi");
+// durchgereicht. Gleiche Quelle wie splitFormulas.
+export const PROTECT_RE = new RegExp(PROTECT_PATTERN, "gi");
 
 /** Marke (Zeichen aus dem privaten Bereich), die beim Zurückschreiben für ein Kästchen steht. */
 export const PI_MARK = "";

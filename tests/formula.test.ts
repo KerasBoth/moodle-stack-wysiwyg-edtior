@@ -101,6 +101,12 @@ test("splitFormulas: Grenzfälle", () => {
   assert.deepEqual(sources(splitFormulas(R`<img alt="a>b \(x\)"> <img alt='a > \(y\)' title="it's"> \(z\) <a title="x">\(w\)</a>`)), [R`\(z\)`, R`\(w\)`]);
   // Anführungszeichen im Text (nicht im Tag) stören nicht
   assert.deepEqual(sources(splitFormulas(R`<p class="a">it's "\(x\)"</p>`)), [R`\(x\)`]);
+  assert.deepEqual(sources(splitFormulas(R`<a title="it's">\(x\)</a>`)), [R`\(x\)`]);
+  // Anführungszeichen in Kommentaren öffnen keinen Attributwert
+  assert.deepEqual(sources(splitFormulas(R`<!-- it's --> \(x\)`)), [R`\(x\)`]);
+  assert.deepEqual(sources(splitFormulas(R`<!-- gibt's --> <p>\(x\)</p>`)), [R`\(x\)`]);
+  assert.deepEqual(sources(splitFormulas(R`<!-- "x --> \(y\)`)), [R`\(y\)`]);
+  assert.deepEqual(sources(splitFormulas(R`<!-- c --> \(z\)`)), [R`\(z\)`]);
 });
 
 test("splitFormulas: tex ohne Begrenzer, getrimmt, aber \\  am Ende bleibt", () => {
@@ -129,6 +135,8 @@ const SAMPLES = [
   R`<p>\(x<br />y\)</p><p>\[\frac{1}{@n@}\]</p>`,
   R`<span>a \(x</span> y\) <img alt="\(x\)"> <!-- \(x\) {@a@} --> \(ok\) <!-- offen \(y\)`,
   R`<img alt="a>b \(x\)"> <img alt='a > \(y\)' title="it's"> \(z\) <a title="x">\(w\)</a>`,
+  R`<!-- it's --> \(x\) <!-- gibt's --> <p>\(y\)</p> <!-- "x --> \(z\) <!-- c --> \(w\)`,
+  R`<p class="a">it's "\(x\)"</p> <a title="it's">\(v\)</a> <?pi it's?> \(u\)`,
 ];
 
 test("splitFormulas: Roundtrip ist byte-gleich", () => {

@@ -54,8 +54,9 @@ export const FORMULA_PATTERN: string =
   // Vor dem Begrenzer eine gerade Anzahl Backslashes: \\( ist in MathJax ein Escape, kein Begrenzer.
   String.raw`(?<=(?:^|[^\\])(?:\\\\)*)` +
   // Nicht innerhalb eines Tags (Attributwert). Kommentare überspringt HTML_COMMENT_PATTERN. Ein > in einem
-  // Attributwert in Anführungszeichen beendet das Tag nicht; der Wert darf an der Stelle noch offen sein.
-  String.raw`(?<!<[A-Za-z\/!?](?:"[^"]*"|'[^']*'|[^<>"'])*(?:"[^"]*|'[^']*)?)` +
+  // Attributwert in Anführungszeichen beendet ein Element-Tag nicht; der Wert darf an der Stelle noch offen sein.
+  // <!…> und <?…> haben keine Attributwerte: Dort endet alles am nächsten >.
+  String.raw`(?<!<[A-Za-z\/](?:"[^"]*"|'[^']*'|[^<>"'])*(?:"[^"]*|'[^']*)?|<[!?][^<>]*)` +
   String.raw`(?:\\\((?:${bodyToken(String.raw`\\\]`)})*?\\\)|\\\[(?:${bodyToken(String.raw`\\\)`)})*?\\\])`;
 
 /**
@@ -64,7 +65,13 @@ export const FORMULA_PATTERN: string =
  */
 export const HTML_COMMENT_PATTERN: string = String.raw`<!--[\s\S]*?(?:-->|$)`;
 
-const SPLIT_RE = new RegExp([FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...PROTECTED_PATTERNS].join("|"), "gi");
+/**
+ * Alle geschützten Konstrukte des Texteditors in der Reihenfolge von PROTECT_RE (Flags "gi", ohne "m":
+ * HTML_COMMENT_PATTERN braucht $ = Ende der Eingabe): Formeln zuerst, dann Kommentare, dann die übrigen.
+ */
+export const PROTECT_PATTERN: string = [FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...PROTECTED_PATTERNS].join("|");
+
+const SPLIT_RE = new RegExp(PROTECT_PATTERN, "gi");
 
 /** Zerlegt einen HTML-Abschnitt: Formeln werden zu Formula, alles andere bleibt string. Konkatenation der source/strings = Eingabe. */
 export function splitFormulas(html: string): (string | Formula)[] {

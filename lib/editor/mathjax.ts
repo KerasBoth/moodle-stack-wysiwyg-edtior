@@ -9,17 +9,20 @@ interface MathJaxApi {
   svgStylesheet(): HTMLElement;
 }
 
+// Laufender bzw. erfolgreicher Ladevorgang; nach einem Fehler null, damit der nächste Aufruf es erneut versucht.
 let loading: Promise<MathJaxApi> | null = null;
+let loadFailureLogged = false;
 // MathJax rendert nacheinander (Autoload von Erweiterungen wie \bbox, \color, \unicode läuft über Wiederholungen).
 let queue: Promise<unknown> = Promise.resolve();
 
 function loadMathJax(): Promise<MathJaxApi> {
   if (typeof window === "undefined") return Promise.reject(new Error("MathJax nur im Browser"));
-  loading ??= new Promise<MathJaxApi>((resolve, reject) => {
+  if (loading) return loading;
+  const script = document.createElement("script");
+  const attempt = new Promise<MathJaxApi>((resolve, reject) => {
     const w = window as unknown as { MathJax?: unknown };
     // \bbox, \color und \unicode lädt das Autoload von tex-svg.js bei Bedarf aus /vendor/mathjax/input/tex/extensions/.
     w.MathJax = { startup: { typeset: false }, svg: { fontCache: "local" }, tex: {} };
-    const script = document.createElement("script");
     script.src = SRC;
     script.async = true;
     script.onerror = () => reject(new Error("MathJax konnte nicht geladen werden"));
@@ -33,7 +36,14 @@ function loadMathJax(): Promise<MathJaxApi> {
     };
     document.head.appendChild(script);
   });
-  return loading;
+  // Ladefehler: einmal melden (TeX-Fehler bleiben still); der nächste Aufruf lädt neu.
+  attempt.catch((e: unknown) => {
+    if (!loadFailureLogged) { loadFailureLogged = true; console.warn("MathJax:", e); }
+    script.remove();
+    if (loading === attempt) loading = null;
+  });
+  loading = attempt;
+  return attempt;
 }
 
 /** TeX → gesetzte Formel (mjx-container mit SVG). Lehnt ab bei Ladefehler oder TeX-Fehler. */

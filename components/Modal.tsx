@@ -41,7 +41,7 @@ export function Modal({ title, ariaLabel, onClose, children, wide, className }: 
   // Portal nach document.body: später geöffnete Modals liegen so immer später im DOM und damit oben.
   return createPortal(
     <div className="modal-backdrop" ref={rootRef} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
+      <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="btn ghost small" onClick={onClose} aria-label="Schließen"><IconX /></button>

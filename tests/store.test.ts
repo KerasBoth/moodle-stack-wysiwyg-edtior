@@ -284,6 +284,21 @@ for (const driver of DRIVERS) {
       assert.equal((await db.get<{ n: number }>("SELECT CAST(COUNT(*) AS INTEGER) AS n FROM file_shares"))!.n, 0);
     });
 
+    test("renaming does not mask a concurrent content save", async () => {
+      const db = await open();
+      const anna = await createUser(db, "anna", "geheim123", false);
+      const bob = await createUser(db, "bob", "geheim123", false);
+      const f = await createFile(db, { name: "k", content: sample }, anna.id);
+      await setShare(db, anna.id, f.id, bob.id, "edit");
+      const t0 = f.updatedAt;
+      await updateFile(db, bob.id, f.id, { content: sample.replace(QNAME, "Bob"), baseUpdatedAt: t0 });
+      const t1 = (await getFile(db, anna.id, f.id)).updatedAt;
+      const renamed = await updateFile(db, anna.id, f.id, { name: "neu" });
+      assert.equal(renamed.name, "neu.xml");
+      assert.equal(renamed.updatedAt, t1);
+      await assert.rejects(updateFile(db, anna.id, f.id, { content: sample, baseUpdatedAt: t0 }), status(409));
+    });
+
     test("saves in quick succession always get a newer timestamp", async () => {
       const db = await open();
       const u = await createUser(db, "anna", "geheim123", false);

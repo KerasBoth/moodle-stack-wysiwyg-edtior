@@ -2,7 +2,8 @@
 
 /** Dateiname für eine Aufgabe: Sonderzeichen entfernen, Leerraum zu `-`, Endung `.xml`. Leerer Titel → `stack-aufgabe.xml`. */
 export function fileNameFromTitle(title: string): string {
-  const base = title.replace(/[^\wäöüÄÖÜß() -]+/g, "").trim().replace(/\s+/g, "-").replace(/-{2,}/g, "-");
+  const base = title.replace(/[^\wäöüÄÖÜß() -]+/g, "").trim().replace(/\s+/g, "-").replace(/-{2,}/g, "-")
+    .slice(0, 120).replace(/^-+|-+$/g, "");
   return `${base || "stack-aufgabe"}.xml`;
 }
 

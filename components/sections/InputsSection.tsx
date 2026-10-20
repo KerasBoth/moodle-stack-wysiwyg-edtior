@@ -142,7 +142,7 @@ export default function InputsSection({ q, update, build }: SectionProps) {
                 <button className="btn small ghost" disabled={idx === q.inputs.length - 1} title="Nach unten" onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx + 1, 0, it); })}><IconDown /></button>
                 <button className="btn small danger" title="Eingabe löschen" onClick={async () => {
                   const ok = await dialogs.confirm({ title: "Eingabe löschen?", message: `Eingabe ${f.name} löschen? Platzhalter im Fragetext bleiben bestehen.`, confirmLabel: "Löschen", danger: true });
-                  if (ok) update((x) => { x.inputs.splice(idx, 1); });
+                  if (ok) update((x) => { const i = x.inputs.findIndex((it) => it.fields.name === f.name); if (i >= 0) x.inputs.splice(i, 1); });
                 }}><IconTrash /></button>
               </div>
             </div>

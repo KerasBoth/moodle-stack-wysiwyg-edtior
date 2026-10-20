@@ -80,6 +80,8 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const loaded = useRef(false);
   const [ready, setReady] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const savingRef = useRef<Promise<FileInfo | null> | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const stackItems = useMemo(
     () => quiz.items.map((it, idx) => ({ it, idx })).filter((x) => x.it.kind === "stack"),
@@ -314,7 +316,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const xmlText = useCallback(() => writeQuiz(quiz), [quiz]);
 
   /** Speichert in der Datenbank; neue Aufgaben bekommen ohne Rückfrage einen Namen aus dem Aufgabentitel. Liefert die gespeicherte Datei. */
-  const saveToServer = useCallback(async (): Promise<FileInfo | null> => {
+  const doSave = useCallback(async (): Promise<FileInfo | null> => {
     if (file?.role === "read") {
       notify("Nur Lesezugriff – speichern nicht möglich", true);
       return null;
@@ -354,6 +356,15 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     }
   }, [file, categoryId, q, xmlText, notify, refreshFiles, dialogs]);
 
+  /** Läuft bereits ein Speichern, wird dessen Ergebnis geliefert – kein zweiter Request (sonst entstünde eine zweite Datei bzw. ein veralteter Stand). */
+  const saveToServer = useCallback((): Promise<FileInfo | null> => {
+    if (savingRef.current) return savingRef.current;
+    setSaving(true);
+    const p = doSave().finally(() => { savingRef.current = null; setSaving(false); });
+    savingRef.current = p;
+    return p;
+  }, [doSave]);
+
   /** „Speichern unter“: legt eine eigene Datei an (für den Besitzer der neuen Datei), ohne die geöffnete zu ändern. */
   const saveAsNew = useCallback(async (name: string, overwrite: boolean): Promise<{ error?: string; exists?: boolean }> => {
     try {
@@ -368,7 +379,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       setSaveAs(false);
       return {};
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && e.data.exists) return { exists: true };
+      if (e instanceof ApiError && e.status === 409 && e.data.exists) return { exists: true, error: e.message };
       return { error: e instanceof Error ? e.message : "Speichern fehlgeschlagen" };
     }
   }, [file, categoryId, xmlText, notify, refreshFiles]);
@@ -383,7 +394,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       notify(`Umbenannt: ${f.name}`);
       return null;
     } catch (e) {
-      return e instanceof ApiError && e.status === 409 && e.data.exists ? `${name} existiert bereits.` : e instanceof Error ? e.message : "Umbenennen fehlgeschlagen";
+      return e instanceof ApiError && e.status === 409 && e.data.exists ? `${e.message}.` : e instanceof Error ? e.message : "Umbenennen fehlgeschlagen";
     }
   }, [file, notify, refreshFiles]);
 
@@ -476,8 +487,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   };
   const deleteQuestion = async () => {
     if (!current || stackItems.length < 2) return;
+    const uid = q?.uid;
     if (!(await dialogs.confirm({ title: "Aufgabe entfernen?", message: `Aufgabe „${q?.name}“ aus der Datei entfernen?`, confirmLabel: "Entfernen", danger: true }))) return;
-    setQuiz((prev) => ({ items: prev.items.filter((_, i) => i !== current.idx) }));
+    setQuiz((prev) => ({ items: prev.items.filter((it) => !(it.kind === "stack" && it.q.uid === uid)) }));
     setSel(Math.max(0, sel - 1));
     setDirty(true);
   };
@@ -549,7 +561,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                 <div className="burger-sep">Datei</div>
                 <button className="mi" onClick={newFile}><span><IconPlus /> Neue Aufgabe</span></button>
                 <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> XML hochladen …</span><small>oder ins Fenster ziehen</small></button>
-                <button className="mi" disabled={readOnly} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
+                <button className="mi" disabled={readOnly || saving} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
                 <button className="mi" onClick={() => { setMenu(null); setSaveAs(true); }}><span><IconSave /> Speichern unter …</span></button>
                 {readOnly ? (
                   <button className="mi" onClick={() => { setMenu(null); download(); }}><span><IconDownload /> Download</span><kbd>Strg+Umschalt+S</kbd></button>
@@ -603,7 +615,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
             : <span className="doc-cat" title="Kategorie (im Menü änderbar)">{categories.find((c) => c.id === categoryId)?.name ?? "Ohne Kategorie"}</span>}
         </div>
         <div className="spacer" />
-        <button className="tbtn primary" disabled={readOnly} onClick={() => saveToServer()} title={readOnly ? "Nur Lesezugriff" : "In der Datenbank speichern (Strg+S)"}><IconSave /> Speichern</button>
+        <button className="tbtn primary" disabled={readOnly || saving}onClick={() => saveToServer()} title={readOnly ? "Nur Lesezugriff" : "In der Datenbank speichern (Strg+S)"}><IconSave /> Speichern</button>
         <UserMenu user={user} notify={notify} />
       </header>
       {readOnly && <div className="readonly-band" role="status">Nur lesen – geteilt von {file?.ownerName}</div>}

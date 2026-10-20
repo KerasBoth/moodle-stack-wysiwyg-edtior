@@ -2,7 +2,7 @@
 
 // In-App-Dialoge (Ersatz für die Browser-Dialoge prompt, confirm und alert): confirm, prompt, form.
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useId, useMemo, useRef, useState } from "react";
 import { Modal, isModalOpen as modalOpen } from "./Modal";
 
 export interface ConfirmOptions { title: string; message: React.ReactNode; confirmLabel: string; danger?: boolean }
@@ -86,6 +86,7 @@ function ConfirmDialog({ opts, done }: { opts: ConfirmOptions; done: (v: boolean
 function FormDialog({ opts, done }: { opts: FormOptions; done: (v: Record<string, string> | null) => void }) {
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(opts.fields.map((f) => [f.name, f.initial ?? ""])));
   const [error, setError] = useState<string | null>(null);
+  const uid = useId();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,8 +101,9 @@ function FormDialog({ opts, done }: { opts: FormOptions; done: (v: Record<string
         {opts.message && <div className="field">{opts.message}</div>}
         {opts.fields.map((f, i) => (
           <div className="field" key={f.name}>
-            <label>{f.label}</label>
+            <label htmlFor={`${uid}-${f.name}`}>{f.label}</label>
             <input
+              id={`${uid}-${f.name}`}
               className={f.mono ? "inp mono" : "inp"}
               type={f.type ?? "text"}
               placeholder={f.placeholder}

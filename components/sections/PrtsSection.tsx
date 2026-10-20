@@ -145,7 +145,7 @@ export default function PrtsSection({ q, update, build }: SectionProps) {
                 )}
                 <button className="btn small danger" title="PRT löschen" onClick={async () => {
                   const ok = await dialogs.confirm({ title: "PRT löschen?", message: `PRT ${p.name} löschen?`, confirmLabel: "Löschen", danger: true });
-                  if (ok) update((x) => { x.prts.splice(pi, 1); });
+                  if (ok) update((x) => { const i = x.prts.findIndex((it) => it.name === p.name); if (i >= 0) x.prts.splice(i, 1); });
                 }}><IconTrash /></button>
               </div>
             </div>

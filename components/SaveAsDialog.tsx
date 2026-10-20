@@ -2,7 +2,7 @@
 
 // „Speichern unter …“: Dateiname eingeben; bei vorhandenem Namen Überschreiben anbieten.
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Modal } from "./Modal";
 
 export default function SaveAsDialog({ initialName, onSave, onClose }: {
@@ -14,6 +14,7 @@ export default function SaveAsDialog({ initialName, onSave, onClose }: {
   const [message, setMessage] = useState<string | null>(null);
   const [exists, setExists] = useState(false);
   const [busy, setBusy] = useState(false);
+  const uid = useId();
 
   const submit = async (overwrite: boolean) => {
     const n = name.trim();
@@ -21,7 +22,7 @@ export default function SaveAsDialog({ initialName, onSave, onClose }: {
     setBusy(true);
     try {
       const r = await onSave(n, overwrite);
-      if (r.exists) { setExists(true); setMessage(`${n} existiert bereits.`); }
+      if (r.exists) { setExists(true); setMessage(r.error ?? `${n} existiert bereits.`); }
       else if (r.error) { setExists(false); setMessage(r.error); }
     } finally {
       setBusy(false);
@@ -32,8 +33,8 @@ export default function SaveAsDialog({ initialName, onSave, onClose }: {
     <Modal title="Speichern unter" onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); submit(false); }}>
         <div className="field">
-          <label>Dateiname</label>
-          <input className="inp" value={name} autoFocus onFocus={(e) => e.currentTarget.select()}
+          <label htmlFor={`${uid}-name`}>Dateiname</label>
+          <input id={`${uid}-name`} className="inp" value={name} autoFocus onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => { setName(e.target.value); setMessage(null); setExists(false); }} />
         </div>
         {message && <div className="issue error">{message}</div>}

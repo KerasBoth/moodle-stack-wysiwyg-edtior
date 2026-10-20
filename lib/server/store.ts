@@ -422,8 +422,9 @@ export async function updateFile(
       set("question_names", JSON.stringify(questions));
     }
     if (sets.length) {
-      // Kategorie verschieben zählt nicht als Bearbeitung des Inhalts
-      if (input.content !== undefined || input.name !== undefined) {
+      // Umbenennen und Kategorie verschieben zählen nicht als Bearbeitung des Inhalts
+      // (sonst würde ein gleichzeitiger fremder Inhalts-Stand ohne Konflikt überschrieben)
+      if (input.content !== undefined && input.content !== cur.content) {
         set("updated_at", after(cur.updated_at));
         set("updated_by", userId);
       }

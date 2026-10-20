@@ -84,6 +84,8 @@ Lokal mit Docker: `docker compose up -d --build`.
   - Pro Kategorie gibt es „Neue Aufgabe“ und „XML hochladen“ (mehrere Dateien möglich).
   - Suche über Datei- und Fragenamen.
 - **Kategorien im Editor**: Die Auswahl in der Kopfleiste ordnet die geöffnete Datei sofort einer Kategorie zu.
+- **Speichern ohne Rückfrage**: „Speichern“ (Strg+S) benennt neue Aufgaben automatisch nach dem Aufgabentitel und nummeriert sie bei gleichem Namen durch (-2, -3), statt eine vorhandene Datei zu überschreiben. „Speichern unter …“ im Burger-Menü speichert eine Kopie unter einem frei gewählten Namen. Den Dateinamen kann der Besitzer unter „Allgemein“ umbenennen.
+- **In-App-Dialoge**: Alle Bestätigungen und Eingaben erscheinen als Dialoge in der Anwendung, nicht als Browser-Popups.
 - **XML-Import/-Export**: Dateien aus der Datenbank öffnen, hochladen oder per Drag & Drop laden. Dateien mit mehreren Fragen werden unterstützt. Unbekannte Elemente bleiben beim Speichern unverändert erhalten.
 - **Maxima-Editor** (Fragevariablen, Feedback-Variablen, Musterlösungen, PRT-Knoten):
   - Autovervollständigung für etwa 140 STACK- und Maxima-Funktionen und für eigene Variablen, jeweils mit ihrem aktuellen Wert.
@@ -113,7 +115,7 @@ Lokal mit Docker: `docker compose up -d --build`.
   - SAns und TAns haben eine Auswahlliste. SAns bietet die Eingaben und die Feedback-Variablen an, TAns die Musterlösungen der Eingaben, die Fragevariablen samt aktuellem Wert und die Feedback-Variablen. Freier Text bleibt möglich.
   - Jeder PRT wird als Baum mit wahr/falsch-Zweigen, Rückverweisen und Endpunkten samt Punkten dargestellt. Ein Klick auf einen Knoten öffnet seine Einstellungen.
 - **Editoren für Eingaben, PRTs, Optionen, Fragetests und Varianten**. Eingaben und Rückmeldebäume sind als Tabs angeordnet: Klick öffnet einen Eintrag, Häkchen, Strg+Klick oder Umschalt+Klick öffnen mehrere. Beim Umbenennen von Eingaben oder PRTs werden alle Verweise angepasst.
-- **Kopfleiste**: Die Kopfleiste zeigt nur Datei, Kategorie, „Speichern“ und das Benutzermenü. Alle weiteren Aktionen stehen im Burger-Menü links: neue Aufgabe, XML hochladen, Speichern & Download, XML kopieren, Kategorie, Funktionsreferenz, Vorschau und zuletzt bearbeitete Dateien.
+- **Kopfleiste**: Die Kopfleiste zeigt nur Datei, Kategorie, „Speichern“ und das Benutzermenü. Alle weiteren Aktionen stehen im Burger-Menü links: neue Aufgabe, XML hochladen, Speichern unter …, Speichern & Download, XML kopieren, Kategorie, Funktionsreferenz, Vorschau und zuletzt bearbeitete Dateien.
 - **Funktionsreferenz** (im Burger-Menü) mit Suche, Kategorien, Antworttests und CASText-Blöcken. „Einfügen“ setzt den Eintrag in den zuletzt benutzten Editor ein.
 
 Tastenkürzel: `Strg+S` speichert, `Strg+Umschalt+S` speichert und lädt die XML-Datei herunter, `Strg+Leertaste` öffnet die Vervollständigung.

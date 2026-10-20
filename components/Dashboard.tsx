@@ -5,7 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DashboardData, FileInfo, User } from "@/lib/server/store";
 import { api, ApiError, relTime } from "@/lib/client/api";
-import { IconClock, IconFile, IconPencil, IconPlus, IconSearch, IconTag, IconTrash, IconUpload, IconX } from "./icons";
+import { IconClock, IconFile, IconPencil, IconPlus, IconSearch, IconShare, IconTag, IconTrash, IconUpload, IconX } from "./icons";
+import { personName } from "@/lib/people";
+import ShareDialog from "./ShareDialog";
 import UserMenu from "./UserMenu";
 
 const PER_CATEGORY = 5;
@@ -19,6 +21,7 @@ export default function Dashboard({ user }: { user: User }) {
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [newCat, setNewCat] = useState("");
   const [search, setSearch] = useState("");
+  const [sharing, setSharing] = useState<FileInfo | null>(null);
   const [results, setResults] = useState<FileInfo[] | null>(null);
   const [expanded, setExpanded] = useState<Record<string, FileInfo[]>>({});
   const expandedRef = useRef(expanded);
@@ -146,7 +149,7 @@ export default function Dashboard({ user }: { user: User }) {
         <div className="dash">
           <div className="dash-head">
             <div>
-              <h1>Hallo, {user.username}</h1>
+              <h1>Hallo, {personName(user)}</h1>
               <p>{data ? `${data.totalFiles} Aufgabendatei(en) in ${data.categories.length} Kategorie(n)` : "Lade …"}</p>
             </div>
             <div className="search">
@@ -159,7 +162,7 @@ export default function Dashboard({ user }: { user: User }) {
           {results ? (
             <section className="card">
               <div className="card-head"><h3>Suchergebnisse</h3><span className="sub">{results.length} Treffer für „{search.trim()}“</span></div>
-              {results.length ? <FileRows files={results} showCategory onDelete={deleteFile} /> : <div className="card-body muted">Keine Aufgaben gefunden.</div>}
+              {results.length ? <FileRows files={results} showCategory onDelete={deleteFile} onShare={setSharing} /> : <div className="card-body muted">Keine Aufgaben gefunden.</div>}
             </section>
           ) : (
             <section className="card">
@@ -167,7 +170,14 @@ export default function Dashboard({ user }: { user: User }) {
               {data && data.recent.length === 0 && (
                 <div className="card-body muted">Noch keine Aufgaben. Lege eine <a href="/editor?new=1">neue Aufgabe</a> an oder lade XML-Dateien in eine Kategorie hoch.</div>
               )}
-              {data && data.recent.length > 0 && <FileRows files={data.recent} showCategory onDelete={deleteFile} />}
+              {data && data.recent.length > 0 && <FileRows files={data.recent} showCategory onDelete={deleteFile} onShare={setSharing} />}
+            </section>
+          )}
+
+          {data && data.shared.length > 0 && (
+            <section className="card">
+              <div className="card-head"><IconShare className="head-ico" /><h3>Mit mir geteilt</h3><span className="chip">{data.shared.length}</span></div>
+              <FileRows files={data.shared} showCategory onDelete={deleteFile} onShare={setSharing} />
             </section>
           )}
 
@@ -197,7 +207,7 @@ export default function Dashboard({ user }: { user: User }) {
                       </div>
                     )}
                   </div>
-                  {list.length ? <FileRows files={list} onDelete={deleteFile} /> : <div className="card-body muted">Noch keine Aufgaben in dieser Kategorie.</div>}
+                  {list.length ? <FileRows files={list} onDelete={deleteFile} onShare={setSharing} /> : <div className="card-body muted">Noch keine Aufgaben in dieser Kategorie.</div>}
                   <div className="cat-foot">
                     {g.id !== null && <a className="btn small" href={`/editor?new=1&category=${g.id}`}><IconPlus /> Neue Aufgabe</a>}
                     <UploadButton onFiles={(fl) => upload(fl, g.id)} />
@@ -214,6 +224,7 @@ export default function Dashboard({ user }: { user: User }) {
         </div>
       </div>
 
+      {sharing && <ShareDialog file={sharing} onClose={() => setSharing(null)} notify={notify} />}
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
     </div>
   );
@@ -229,12 +240,12 @@ function UploadButton({ onFiles }: { onFiles: (f: FileList) => void }) {
   );
 }
 
-function FileRows({ files, showCategory, onDelete }: { files: FileInfo[]; showCategory?: boolean; onDelete: (f: FileInfo) => void }) {
+function FileRows({ files, showCategory, onDelete, onShare }: { files: FileInfo[]; showCategory?: boolean; onDelete: (f: FileInfo) => void; onShare: (f: FileInfo) => void }) {
   return (
     <ul className="file-rows">
       {files.map((f) => (
         <li key={f.id}>
-          <a href={editorUrl(f)} className="file-row" title={`${f.name} öffnen`}>
+          <a href={editorUrl(f)} className={`file-row ${f.role === "owner" ? "has-actions" : ""}`}title={`${f.name} öffnen`}>
             <IconFile className="file-ico" />
             <span className="file-main">
               <span className="file-q">
@@ -243,10 +254,19 @@ function FileRows({ files, showCategory, onDelete }: { files: FileInfo[]; showCa
               </span>
               <span className="file-name">{f.name}</span>
             </span>
-            {showCategory && <span className="chip">{f.categoryName ?? "Ohne Kategorie"}</span>}
+            {f.role !== "owner" ? (
+              <span className="chip accent">{f.ownerName} · {f.role === "edit" ? "Bearbeiten" : "Lesen"}</span>
+            ) : (
+              showCategory && <span className="chip">{f.categoryName ?? "Ohne Kategorie"}</span>
+            )}
             <span className="file-meta">{f.updatedBy ? `${f.updatedBy} · ` : ""}{relTime(f.updatedAt)}</span>
           </a>
-          <button className="btn ghost small danger row-del" title="Löschen" onClick={() => onDelete(f)}><IconTrash /></button>
+          {f.role === "owner" && (
+            <span className="row-del">
+              <button className="btn ghost small" title="Teilen" onClick={() => onShare(f)}><IconShare /></button>
+              <button className="btn ghost small danger" title="Löschen" onClick={() => onDelete(f)}><IconTrash /></button>
+            </span>
+          )}
         </li>
       ))}
     </ul>

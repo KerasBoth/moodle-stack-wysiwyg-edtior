@@ -50,3 +50,4 @@ export const IconClearFormat = base(<><path d="M6 5h12M12 5l-3 14M7 19h5" /><pat
 export const IconBraces = base(<path d="M8 4c-2 0-3 1-3 3v2c0 1.5-1 2.5-2 3 1 .5 2 1.5 2 3v2c0 2 1 3 3 3M16 4c2 0 3 1 3 3v2c0 1.5 1 2.5 2 3-1 .5-2 1.5-2 3v2c0 2-1 3-3 3" />);
 export const IconMenu = base(<path d="M4 7h16M4 12h16M4 17h16" />);
 export const IconChart = base(<><path d="M4 4v16h16" /><path d="M7 15c2-6 4-8 6-4s3 2 5-4" /><circle cx="13" cy="11" r="1.4" fill="currentColor" /></>);
+export const IconShare = base(<><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" /></>);

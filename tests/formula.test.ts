@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import {
   type Formula,
   FORMULA_PATTERN,
+  HTML_COMMENT_PATTERN,
+  MATH_MACROS,
   PROTECTED_PATTERNS,
+  TEXT_MACROS,
   casToMathJax,
   casToMathLive,
   decodeEntities,
@@ -54,6 +57,15 @@ test("splitFormulas: nicht erkannte Fälle bleiben Text", () => {
     R`\( [[input:ans1]] \)`,
     R`\( {@ x \)`,
     R`\\(x\)`,
+    // Tags, Attributwerte und Kommentare: PROTECT_RE arbeitet auf dem rohen HTML
+    R`<span>a \(x</span> y\)`,
+    R`\( a<span>b</span> \)`,
+    R`<img alt="\(x\)">`,
+    R`<a title='\[x\]' href="#">t</a>`,
+    R`<!-- \(x\) -->`,
+    R`<!-- <b>a</b> \(x\) -->`,
+    R`\(x<!-- c -->y\)`,
+    R`\( {@ "<b>" @} \)`,
   ]) {
     assert.deepEqual(sources(splitFormulas(t)), [], t);
   }
@@ -71,8 +83,10 @@ test("splitFormulas: Grenzfälle", () => {
   assert.deepEqual(sources(splitFormulas(R`\( a \\ b \)`)), [R`\( a \\ b \)`]);
   // zwei Formeln direkt hintereinander, leere Formel
   assert.deepEqual(sources(splitFormulas(R`\(x\)\[y\]\(\)`)), [R`\(x\)`, R`\[y\]`, R`\(\)`]);
-  // Inline-Tags sind erlaubt
-  assert.deepEqual(sources(splitFormulas(R`\( a<span>b</span> \)`)), [R`\( a<span>b</span> \)`]);
+  // Ungeschlossener Kommentar reicht bis zum Ende
+  assert.deepEqual(sources(splitFormulas(R`\(a\) <!-- \(x\)`)), [R`\(a\)`]);
+  // nach einem Tag bzw. Kommentar geht die Erkennung weiter
+  assert.deepEqual(sources(splitFormulas(R`<img alt="x"> \(y\) <!-- c --> \(z\)`)), [R`\(y\)`, R`\(z\)`]);
   // Maxima-Listen in {@…@} sind keine STACK-Blöcke
   assert.deepEqual(sources(splitFormulas(R`\( {@[[1,2],[3,4]]@} \)`)), [R`\( {@[[1,2],[3,4]]@} \)`]);
   // nach einem geschützten Block geht die Erkennung weiter
@@ -105,6 +119,7 @@ const SAMPLES = [
   R`<div>\(\begin{pmatrix} 1 &amp; 2 \\ 3 &amp; 4 \end{pmatrix}\)</div>`,
   R`\(f''(x)\) und \(\{x\}\) und \(\left\{ x \right\}\)`,
   R`<p>\(x<br />y\)</p><p>\[\frac{1}{@n@}\]</p>`,
+  R`<span>a \(x</span> y\) <img alt="\(x\)"> <!-- \(x\) {@a@} --> \(ok\) <!-- offen \(y\)`,
 ];
 
 test("splitFormulas: Roundtrip ist byte-gleich", () => {
@@ -134,7 +149,8 @@ test("FORMULA_PATTERN findet im PROTECT_RE dieselben Formeln wie splitFormulas",
     String.raw`\{#[\s\S]*?#\}`,
   ];
   assert.deepEqual([...PROTECTED_PATTERNS], visualEditorAlternatives);
-  const protectRe = new RegExp([FORMULA_PATTERN, ...visualEditorAlternatives].join("|"), "gi");
+  // Kommentare werden mit erkannt und unverändert durchgereicht (kein Kästchen)
+  const protectRe = new RegExp([FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...visualEditorAlternatives].join("|"), "gi");
   for (const t of SAMPLES) {
     const all = [...t.matchAll(protectRe)].map((m) => m[0]);
     const formulas = all.filter((s) => s.startsWith("\\"));
@@ -161,6 +177,8 @@ test("decodeEntities", () => {
   assert.equal(decodeEntities("&amp;lt;"), "&lt;");
   assert.equal(decodeEntities("&#160;&#xA0;"), "  ");
   assert.equal(decodeEntities("a & b &foo; &#x110000;"), "a & b &foo; &#x110000;");
+  // NUL und einzelne Surrogate bleiben undekodiert
+  assert.equal(decodeEntities("&#0;&#xD800;&#57343;&#x1F600;"), "&#0;&#xD800;&#57343;\u{1F600}");
 });
 
 test("formulaSource", () => {
@@ -190,6 +208,19 @@ test("casToMathLive: Kollisionsschutz und Text-Argumente → null", () => {
   assert.equal(casToMathLive(R`\mbox{ {@a@} }`), null);
   assert.equal(casToMathLive(R`\textbf {x {@a@}}`), null);
   assert.equal(casToMathLive(R`\{@a@}`), null);
+  // Argumente ohne Mathematik und \verb
+  assert.equal(casToMathLive(R`\verb|{@a@}|`), null);
+  assert.equal(casToMathLive(R`\verb*+x{@a@}+`), null);
+  assert.equal(casToMathLive(R`\verb|x`), R`\verb|x`);
+  assert.equal(casToMathLive(R`\verb|x| {@a@}`), R`\verb|x| {\bbox[#e2e6e4]{\texttt{a}}}`);
+  assert.equal(casToMathLive(R`\href{{@a@}}{x}`), null);
+  assert.equal(casToMathLive(R`\url{ {@a@} }`), null);
+  assert.equal(casToMathLive(R`\textcolor{{@a@}}{x}`), null);
+  assert.equal(casToMathLive(R`\color{@a@}x`), null);
+  assert.equal(casToMathLive(R`\colorbox{red}{{@a@}}`), null);
+  assert.equal(casToMathLive(R`\fcolorbox{red}{blue}{{@a@}}`), null);
+  assert.equal(casToMathLive(R`\href{u}{{@a@}}`), R`\href{u}{{\bbox[#e2e6e4]{\texttt{a}}}}`);
+  assert.equal(casToMathLive(R`\color{red}{@a@}`), R`\color{red}{\bbox[#e2e6e4]{\texttt{a}}}`);
   // \texttt innerhalb eines Kästchens ist Maxima-Text, kein Konflikt
   assert.equal(casToMathLive(R`{@"\texttt"@}`), R`{\bbox[#e2e6e4]{\texttt{\unicode{"22}\unicode{"5C}texttt\unicode{"22}}}}`);
   // nach dem Text-Argument ist wieder Mathematik
@@ -243,12 +274,20 @@ test("mathLiveToCas: strenger Decoder → null", () => {
     R`\texttt{\unicode{"zz}}`,
     R`\texttt{\unicode{"110000}}`,
     R`\texttt{\unicode"}`,
+    R`\texttt{\unicode{"D800}}`,
+    R`\texttt{\unicode"DFFF }`,
+    R`\texttt{\unicode{"00}}`,
     R`\texttt{a@\unicode{"7D}}`,
   ]) {
     assert.equal(mathLiveToCas(box(inner)), null, inner);
   }
   assert.equal(mathLiveToCas(R`\bbox[#e2e6e4]{\texttt{a}`), null);
   assert.equal(mathLiveToCas(R`\bbox[#e6e2e4]{\texttt{a\unicode{"23}\unicode{"7D}}}`), null);
+  // Kollisionsschutz auch auf dem Rückweg: was außerhalb wie ein Kästchen aussieht → null
+  assert.equal(mathLiveToCas(R`\bbox[#E2E6E4]{\texttt{a}}`), null);
+  assert.equal(mathLiveToCas(R`x+\bbox [ #e6e2e4 ]{y}`), null);
+  assert.equal(mathLiveToCas(R`\texttt{a}+{\bbox[#e2e6e4]{\texttt{b}}}`), null);
+  assert.equal(mathLiveToCas(R`\TEXTTT{a}`), null);
   // "@}" ist nur im @-Kästchen verboten
   assert.equal(mathLiveToCas(R`\bbox[#e6e2e4]{\texttt{a\unicode{"40}\unicode{"7D}}}`), "{#a@}#}");
 });
@@ -294,15 +333,53 @@ test("mathLiveToCas: Makros im Kästchen werden nicht angefasst", () => {
   );
 });
 
-test("mathLiveToCas: Text-Modus-Makros in \\text{…}", () => {
+test("mathLiveToCas: Text-Modus – nur Buchstaben-Makros", () => {
   assert.equal(mathLiveToCas(R`\text{gro\ss e Stra\ss e}`), R`\text{große Straße}`);
-  assert.equal(mathLiveToCas(R`\text{50\% a\&b \#1 x\_y wow\!}`), R`\text{50% a&b #1 x_y wow!}`);
-  assert.equal(mathLiveToCas(R`\text{\textbackslash\textasciicircum\textasciitilde\textasteriskcentered}`), R`\text{\\^~*}`);
-  assert.equal(mathLiveToCas(R`\text{\lbrack a\rbrack \lbrace\textbraceright\euro\degree\textdollar}`), R`\text{[a]\{\}€°\$}`);
-  assert.equal(mathLiveToCas(R`\text{\{ \} \$ \\}`), R`\text{\{ \} \$ \\}`);
+  assert.equal(mathLiveToCas(R`\textbf{\ss}+\mbox{\ss}`), R`\textbf{ß}+\mbox{ß}`);
+  // gültiges LaTeX des Benutzers bleibt nach einer Bearbeitung unverändert
+  for (const t of [
+    R`\text{50\%}`, R`\text{a\&b}`, R`\text{\#1}`, R`\text{x\_y}`, R`\text{wow\!}`,
+    R`\text{\{ \} \$ \\}`, R`\text{\euro\degree\textbackslash\lbrack}`,
+  ]) {
+    assert.equal(mathLiveToCas(t), t, t);
+    assert.equal(mathLiveToCas(t + R`+{\bbox[#e2e6e4]{\texttt{a}}}`), t + "+{@a@}", t);
+  }
   // Mathematik in Text bleibt Mathematik, nach dem Text-Argument ebenso
   assert.equal(mathLiveToCas(R`\text{a $\exponentialE\%$ b}\%\ss`), R`\text{a $\mathrm{e}\%$ b}\%\ss`);
-  assert.equal(mathLiveToCas(R`\textbf{\ss}+\mbox{\ss}`), R`\textbf{ß}+\mbox{ß}`);
+});
+
+test("mathLiveToCas: jede Ersetzung der Makro-Tabellen", () => {
+  const math: Record<string, string> = {
+    doubleprime: R`\prime\prime`, tripleprime: R`\prime\prime\prime`, differentialD: R`\mathrm{d}`,
+    capitalDifferentialD: R`\mathrm{D}`, exponentialE: R`\mathrm{e}`, imaginaryI: R`\mathrm{i}`, imaginaryJ: R`\mathrm{j}`,
+    questeq: R`\stackrel{?}{=}`, coloneq: ":=", Colon: "::", slash: "/", lparen: "(", rparen: ")", degree: "°",
+    euro: "€", pounds: "£", textbullet: "•", backdoubleprime: "‶",
+    Coppa: "Ϙ", coppa: "ϙ", Sampi: "Ϡ", sampi: "ϡ", Yup: "⅄",
+    mapsfrom: "↤", lightning: "↯", nvrightarrow: "⇸", leftarrowtriangle: "⇽", rightarrowtriangle: "⇾",
+    leftrightarrowtriangle: "⇿", differencedelta: "∆", measeq: "≝", eqdef: "≞", nsubset: "⊄", nsupset: "⊅",
+    originalof: "⊶", imageof: "⊷", parallelogram: "▱", boxbar: "◫", Lbag: "⟅", Rbag: "⟆", llbracket: "⟦",
+    rrbracket: "⟧", biconditional: "⟷", longmapsfrom: "⟻", Longmapsfrom: "⟽", Longmapsto: "⟾",
+    nvtwoheadrightarrow: "⤀", Mapsfrom: "⤆", MapsTo: "⤇", nvrightarrowtail: "⤔", twoheadrightarrowtail: "⤖",
+    nvtwoheadrightarrowtail: "⤗", roundimplies: "⥰", boxslash: "⧄", boxbslash: "⧅", boxast: "⧆", boxcircle: "⧇",
+    boxbox: "⧈", fatsemi: "⨟", leftslice: "⪦", rightslice: "⪧", interleave: "⫴", biginterleave: "⫼", sslash: "⫽",
+    talloblong: "⫾",
+  };
+  const text: Record<string, string> = {
+    ss: "ß", ae: "æ", oe: "œ", AE: "Æ", OE: "Œ", o: "ø", O: "Ø", i: "ı", j: "ȷ", aa: "å", AA: "Å",
+  };
+  assert.deepEqual(Object.fromEntries(MATH_MACROS), math);
+  assert.deepEqual(Object.fromEntries(TEXT_MACROS), text);
+  for (const [w, rep] of Object.entries(math)) {
+    const sep = /[a-zA-Z]$/.test(rep) ? " " : "";
+    assert.equal(mathLiveToCas(`a\\${w} b`), `a${rep}${sep}b`, w);
+    // im Text-Modus nicht ersetzt (außer es ist auch ein Text-Makro)
+    if (!(w in text)) assert.equal(mathLiveToCas(`\\text{\\${w}}`), `\\text{\\${w}}`, w);
+  }
+  for (const [w, rep] of Object.entries(text)) {
+    assert.equal(mathLiveToCas(`\\text{x\\${w} y}`), `\\text{x${rep}y}`, w);
+    // in Mathematik nicht ersetzt
+    assert.equal(mathLiveToCas(`x\\${w} y`), `x\\${w} y`, w);
+  }
 });
 
 // ---- MathJax ---------------------------------------------------------------------------

@@ -24,9 +24,9 @@ export const PROTECTED_PATTERNS: readonly string[] = [
   String.raw`\{#[\s\S]*?#\}`,
 ];
 
-// Eine Formel darf keine Zeilen- oder Blockgrenze und keinen STACK-Block überspannen.
-const BLOCK_TAGS = "p|div|li|ul|ol|dl|dt|dd|h[1-6]|table|thead|tbody|tfoot|tr|td|th|blockquote|pre|hr|section|article|header|footer|script|style";
-const FORBID_HTML = String.raw`<br\b|<\/?(?:${BLOCK_TAGS})\b`;
+// Eine Formel darf kein Tag und keinen Kommentar enthalten (PROTECT_RE arbeitet auf dem rohen HTML; ein Kästchen über
+// eine Tag-Grenze hinweg würde das HTML verändern) und keinen STACK-Block überspannen.
+const FORBID_HTML = String.raw`<[A-Za-z\/!?]`;
 const FORBID_STACK_BLOCK = String.raw`\[\[\s*\/?[a-zA-Z_]`;
 // {@…@}/{#…#} sind in der Formel undurchsichtig (STACK ersetzt sie vor MathJax), auch nach einem Backslash.
 const CAS_IN_FORMULA = String.raw`\{@(?:(?!@\}|${FORBID_HTML})[\s\S])*@\}|\{#(?:(?!#\}|${FORBID_HTML})[\s\S])*#\}`;
@@ -50,11 +50,20 @@ function bodyToken(otherClose: string): string {
  * findet. Enthält keine Capture-Gruppen, damit Rückreferenzen späterer Alternativen gültig bleiben.
  */
 export const FORMULA_PATTERN: string =
+  String.raw`(?=\\[(\[])` +
   // Vor dem Begrenzer eine gerade Anzahl Backslashes: \\( ist in MathJax ein Escape, kein Begrenzer.
   String.raw`(?<=(?:^|[^\\])(?:\\\\)*)` +
+  // Nicht innerhalb eines Tags (Attributwert). Kommentare überspringt HTML_COMMENT_PATTERN.
+  String.raw`(?<!<[A-Za-z\/!?][^<>]*)` +
   String.raw`(?:\\\((?:${bodyToken(String.raw`\\\]`)})*?\\\)|\\\[(?:${bodyToken(String.raw`\\\)`)})*?\\\])`;
 
-const SPLIT_RE = new RegExp([FORMULA_PATTERN, ...PROTECTED_PATTERNS].join("|"), "gi");
+/**
+ * HTML-Kommentar (auch ungeschlossen bis zum Ende). Gehört mit in PROTECT_RE, wird dort aber unverändert
+ * durchgereicht (kein Kästchen): So wird in Kommentaren weder eine Formel noch {@…@} erkannt.
+ */
+export const HTML_COMMENT_PATTERN: string = String.raw`<!--[\s\S]*?(?:-->|$)`;
+
+const SPLIT_RE = new RegExp([FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...PROTECTED_PATTERNS].join("|"), "gi");
 
 /** Zerlegt einen HTML-Abschnitt: Formeln werden zu Formula, alles andere bleibt string. Konkatenation der source/strings = Eingabe. */
 export function splitFormulas(html: string): (string | Formula)[] {
@@ -99,9 +108,14 @@ export function decodeEntities(s: string): string {
   return s.replace(/&(?:(lt|gt|amp|quot|apos|nbsp)|#(\d+)|#[xX]([0-9a-fA-F]+));/g, (m, name: string | undefined, dec: string | undefined, hex: string | undefined) => {
     if (name) return NAMED_ENTITIES[name];
     const cp = dec !== undefined ? parseInt(dec, 10) : parseInt(hex!, 16);
-    if (cp > 0x10ffff) return m;
+    if (!isScalarValue(cp)) return m;
     return cp === 0xa0 ? " " : String.fromCodePoint(cp);
   });
+}
+
+/** Ein gültiges, darstellbares Unicode-Zeichen: nicht NUL, kein einzelnes Surrogat, höchstens U+10FFFF. */
+function isScalarValue(cp: number): boolean {
+  return cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff);
 }
 
 /** \( … \) bzw. \[ … \], <>& als Entities. */
@@ -114,9 +128,20 @@ export function formulaSource(kind: FormulaKind, tex: string): string {
 
 const CAS_STICKY = /\{@([\s\S]*?)@\}|\{#([\s\S]*?)#\}/y;
 const BOX_COLOR = { "@": "#e2e6e4", "#": "#e6e2e4" } as const;
-/** Befehle, deren Argument Text ist. Darin lässt sich ein Kästchen nicht darstellen. */
+/** Befehle, deren Argument Text ist (Text-Modus in MathLive). */
 const TEXT_ARG_COMMANDS = new Set(["text", "textrm", "textsf", "texttt", "textit", "textbf", "textup", "textmd", "textsl", "textsc", "textnormal", "mbox", "hbox", "emph"]);
+/**
+ * Anzahl der ersten Argumente, die keine Mathematik sind (Text, URL, Farbe, Klasse …). Ein Kästchen darin lässt sich
+ * nicht darstellen.
+ */
+const NON_MATH_ARGS = new Map<string, number>([
+  ...[...TEXT_ARG_COMMANDS].map((c): [string, number] => [c, 1]),
+  ["href", 1], ["url", 1], ["textcolor", 1], ["color", 1], ["colorbox", 2], ["fcolorbox", 3],
+  ["class", 1], ["cssId", 1], ["style", 1], ["unicode", 1],
+]);
 const CONTROL_SEQ = /\\(?:([a-zA-Z]+)|([\s\S])?)/y;
+/** Kollisionsschutz: Diese Stellen würden auf dem Rückweg als Kästchen gelesen. */
+const COLLISION_RE = /\\texttt|\\bbox\s*\[\s*#e(?:2e6e4|6e2e4)/i;
 
 function casAt(tex: string, i: number): { kind: "@" | "#"; expr: string; end: number } | null {
   CAS_STICKY.lastIndex = i;
@@ -139,18 +164,20 @@ export function encodeExpr(expr: string): string {
 
 /**
  * {@x@}/{#x#} → MathLive-Kästchen. null: Die Formel enthält außerhalb der Kästchen \texttt oder \bbox in einer
- * Kästchenfarbe (Kollisionsschutz), oder ein Kästchen steht in einem Text-Argument. Dann nur im Codefeld bearbeiten.
+ * Kästchenfarbe (Kollisionsschutz), oder ein Kästchen steht in einem Argument ohne Mathematik (\text, \href, \url,
+ * Farbe …) bzw. in \verb. Dann nur im Codefeld bearbeiten.
  */
 export function casToMathLive(tex: string): string | null {
   let out = "";
   let outside = "";
-  const textGroups: boolean[] = [];
-  let pendingText = false;
+  // Je offener Gruppe: Argument ohne Mathematik? Und wie viele solche Argumente folgen danach noch?
+  const groups: { nonMath: boolean; rest: number }[] = [];
+  let pendingArgs = 0;
   let i = 0;
   while (i < tex.length) {
     const box = casAt(tex, i);
     if (box) {
-      if (pendingText || textGroups.includes(true)) return null;
+      if (pendingArgs > 0 || groups.some((g) => g.nonMath)) return null;
       out += `{\\bbox[${BOX_COLOR[box.kind]}]{\\texttt{${encodeExpr(box.expr)}}}}`;
       outside += "\0";
       i = box.end;
@@ -162,21 +189,30 @@ export function casToMathLive(tex: string): string | null {
       CONTROL_SEQ.lastIndex = i;
       const m = CONTROL_SEQ.exec(tex)!;
       token = m[0];
-      pendingText = m[1] !== undefined && TEXT_ARG_COMMANDS.has(m[1]);
+      if (m[1] === "verb") {
+        // \verb|…| bzw. \verb*|…|: Inhalt bis zum nächsten Begrenzer wörtlich
+        let j = i + token.length;
+        if (tex[j] === "*") j++;
+        const close = j < tex.length ? tex.indexOf(tex[j], j + 1) : -1;
+        token = tex.slice(i, close < 0 ? tex.length : close + 1);
+        if (/\{[@#]/.test(token)) return null;
+        pendingArgs = 0;
+      } else {
+        pendingArgs = (m[1] !== undefined && NON_MATH_ARGS.get(m[1])) || 0;
+      }
     } else if (token === "{") {
-      textGroups.push(pendingText);
-      pendingText = false;
+      groups.push({ nonMath: pendingArgs > 0, rest: Math.max(pendingArgs - 1, 0) });
+      pendingArgs = 0;
     } else if (token === "}") {
-      textGroups.pop();
-      pendingText = false;
+      pendingArgs = groups.pop()?.rest ?? 0;
     } else if (!/\s/.test(token)) {
-      pendingText = false;
+      pendingArgs = 0;
     }
     out += token;
     outside += token;
     i += token.length;
   }
-  if (/\\texttt|\\bbox\s*\[\s*#e(?:2e6e4|6e2e4)/i.test(outside)) return null;
+  if (COLLISION_RE.test(outside)) return null;
   return out;
 }
 
@@ -215,7 +251,7 @@ function decodeBoxText(s: string): string | null {
     if (m[1] !== undefined) out += m[1];
     else {
       const cp = parseInt(m[2] ?? m[3], 16);
-      if (cp > 0x10ffff) return null;
+      if (!isScalarValue(cp)) return null;
       out += String.fromCodePoint(cp);
     }
     pos = BOX_TEXT_TOKEN.lastIndex;
@@ -258,7 +294,7 @@ function readBox(latex: string, i: number): { cas: string; end: number } | typeo
 
 // MathLive-eigene Befehle (MathJax 3 kennt sie nicht) → Gleichwertiges, das MathJax kennt. Nur außerhalb der Kästchen.
 // Ermittelt aus mathlive@0.111.1: Zeichen → Befehl beim Tippen, Inline-Shortcuts und Tastenbelegung.
-const MATH_MACROS = new Map(Object.entries({
+export const MATH_MACROS: ReadonlyMap<string, string> = new Map(Object.entries({
   doubleprime: String.raw`\prime\prime`,
   tripleprime: String.raw`\prime\prime\prime`,
   differentialD: String.raw`\mathrm{d}`,
@@ -288,17 +324,12 @@ const MATH_MACROS = new Map(Object.entries({
   talloblong: "⫾",
 }));
 
-// MathLives Text-Modus-Ausgabe (TEXT_SYMBOLS) → Text, den MathJax in \text{…} wörtlich so zeigt.
-// MathJax wertet dort nur \{ \} \$ \\ aus; \{ \} \$ \\ und "\ " bleiben deshalb stehen.
-const TEXT_MACROS = new Map(Object.entries({
-  ss: "ß", ae: "æ", oe: "œ", AE: "Æ", OE: "Œ", O: "Ø", i: "ı", j: "ȷ", aa: "å", AA: "Å",
-  euro: "€", maltese: "✠", textunderscore: "_", textbraceleft: "\\{", textbraceright: "\\}", lbrace: "\\{",
-  rbrace: "\\}", lbrack: "[", rbrack: "]", nobreakspace: " ", ldots: "…", textellipsis: "…",
-  backslash: "\\\\", textbackslash: "\\\\", degree: "°", textasciicircum: "^", textasciitilde: "~",
-  textasteriskcentered: "*", textbullet: "•", textdollar: "\\$", textsterling: "£", textdagger: "†",
-  textdaggerdbl: "‡",
+// Buchstaben, die MathLive im Text-Modus als Befehl schreibt (\ss für ß …). MathJax zeigt sie in \text{…} wörtlich
+// als „\ss“; der Buchstabe selbst sieht überall gleich aus. Satzzeichen und Symbole (\%, \&, \#, \_, \euro …) bleiben
+// stehen: \text{50\%} ist gültiges LaTeX (z. B. mit textmacros) und wird nicht umgeschrieben.
+export const TEXT_MACROS: ReadonlyMap<string, string> = new Map(Object.entries({
+  ss: "ß", ae: "æ", oe: "œ", AE: "Æ", OE: "Œ", o: "ø", O: "Ø", i: "ı", j: "ȷ", aa: "å", AA: "Å",
 }));
-const TEXT_SYMBOL_MACROS = new Map(Object.entries({ "!": "!", "#": "#", "%": "%", "&": "&", "_": "_" }));
 const PRIMES = /\^(?:\{\s*((?:\\(?:prime|doubleprime|tripleprime)(?![a-zA-Z])\s*)+)\}|\\(prime|doubleprime|tripleprime)(?![a-zA-Z])\s*)/y;
 const PRIME_COUNT: Record<string, number> = { prime: 1, doubleprime: 2, tripleprime: 3 };
 
@@ -310,6 +341,8 @@ type Mode = "math" | "text" | "textmath";
  */
 export function mathLiveToCas(latex: string): string | null {
   let out = "";
+  let outside = ""; // Ausgabe ohne Kästchen, für den Kollisionsschutz
+  let outsideFrom = 0;
   const groups: Mode[] = [];
   const mode = (): Mode => groups[groups.length - 1] ?? "math";
   let pendingText = false;
@@ -319,7 +352,9 @@ export function mathLiveToCas(latex: string): string | null {
     const box = readBox(latex, i);
     if (box === FAIL) return null;
     if (box) {
+      outside += out.slice(outsideFrom) + "\0";
       out += box.cas;
+      outsideFrom = out.length;
       i = box.end;
       pendingText = false;
       continue;
@@ -332,7 +367,7 @@ export function mathLiveToCas(latex: string): string | null {
       i = CONTROL_SEQ.lastIndex;
       const word = m[1];
       if (word === undefined) {
-        out += (inText && TEXT_SYMBOL_MACROS.get(m[2] ?? "")) || m[0];
+        out += m[0];
       } else if (!inText && word === "placeholder") {
         // \placeholder[…]{x} → {x}
         skipSpaces();
@@ -371,6 +406,8 @@ export function mathLiveToCas(latex: string): string | null {
     out += c;
     i++;
   }
+  // Fail closed: Was außerhalb der Kästchen wie ein Kästchen aussieht, ist nicht sicher lesbar.
+  if (COLLISION_RE.test(outside + out.slice(outsideFrom))) return null;
   return out;
 }
 

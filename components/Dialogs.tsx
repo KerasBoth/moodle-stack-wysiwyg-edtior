@@ -1,6 +1,6 @@
 "use client";
 
-// In-App-Dialoge (Ersatz für window.prompt/confirm/alert): confirm, prompt, form.
+// In-App-Dialoge (Ersatz für die Browser-Dialoge prompt, confirm und alert): confirm, prompt, form.
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { Modal, isModalOpen as modalOpen } from "./Modal";

@@ -566,6 +566,8 @@ a.tbtn, a.btn, a.mi { text-decoration: none; color: inherit; }
 .modal.jsxb { width: min(1240px, 100%); height: min(860px, calc(100vh - 32px)); }
 .modal.jsxb .modal-head h3 { display: flex; align-items: center; gap: 8px; }
 .modal.jsxb .modal-head small { font-weight: 400; color: var(--ink-3); font-size: 13px; }
+.modal.jsxb .modal-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.modal.jsxb .jsxb-body { flex: 1; }
 .jsxb-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); }
 .jsxb-form { overflow: auto; padding: 14px 16px 20px; border-right: 1px solid var(--line); background: var(--panel-2); }
 .jsxb-side { overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }

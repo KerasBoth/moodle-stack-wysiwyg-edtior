@@ -14,7 +14,7 @@ export function isModalOpen(): boolean {
   return stack.length > 0;
 }
 
-export function Modal({ title, onClose, children, wide, className }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean; className?: string }) {
+export function Modal({ title, ariaLabel, onClose, children, wide, className }: { title: React.ReactNode; ariaLabel?: string; onClose: () => void; children: React.ReactNode; wide?: boolean; className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -41,7 +41,7 @@ export function Modal({ title, onClose, children, wide, className }: { title: st
   // Portal nach document.body: später geöffnete Modals liegen so immer später im DOM und damit oben.
   return createPortal(
     <div className="modal-backdrop" ref={rootRef} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-label={title}>
+      <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="btn ghost small" onClick={onClose} aria-label="Schließen"><IconX /></button>

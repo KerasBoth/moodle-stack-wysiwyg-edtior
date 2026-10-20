@@ -5,10 +5,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { editorContext } from "@/lib/editor/context";
+import { useDialogs } from "../Dialogs";
+import { Modal } from "../Modal";
 import {
   COLORS, type JsxElement, type JsxModel, generateJsx, newElement, newModel,
 } from "@/lib/stack/jsxbuilder";
-import { IconChart, IconCode, IconDown, IconPlus, IconTrash, IconUp, IconX } from "../icons";
+import { IconChart, IconCode, IconDown, IconPlus, IconTrash, IconUp } from "../icons";
 
 export interface JsxApplyResult {
   code: string;
@@ -272,11 +274,7 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
   const gen = useMemo(() => generateJsx(model), [model]);
   const err = (id: string, field: string) => gen.errors.find((e) => e.id === id && e.field === field)?.message;
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  const dialogs = useDialogs();
 
   const set = (fn: (m: JsxModel) => void) => setModel((m) => { const n = structuredClone(m); fn(n); return n; });
   const setEl = (id: string, patch: Partial<JsxElement>) => set((m) => {
@@ -297,12 +295,19 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
 
   const inputNames = [...inputs.map((i) => i.name), ...created.filter((c) => !inputs.some((i) => i.name === c))];
   const allNames = new Set(inputNames);
-  const createInput = (elId: string) => {
+  const createInput = async (elId: string) => {
     let n = 1;
     while (allNames.has(`ans${n}`)) n++;
-    const name = window.prompt("Name der neuen Eingabe:", `ans${n}`)?.trim();
+    const answer = await dialogs.prompt({
+      title: "Neue Eingabe",
+      label: "Name",
+      initial: `ans${n}`,
+      mono: true,
+      confirmLabel: "Anlegen",
+      validate: ({ value }) => (/^[A-Za-z][A-Za-z0-9_]*$/.test(value.trim()) ? null : "Name: Buchstaben, Ziffern und _, beginnend mit einem Buchstaben"),
+    });
+    const name = answer?.trim();
     if (!name) return;
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) { window.alert("Name: Buchstaben, Ziffern und _, beginnend mit einem Buchstaben"); return; }
     if (!allNames.has(name)) setCreated((c) => [...c, name]);
     setEl(elId, { input: name } as Partial<JsxElement>);
   };
@@ -336,12 +341,7 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
   const setBox = (i: number, v: string) => set((m) => { m.bbox[i] = v; });
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal jsxb" role="dialog" aria-label="Grafik-Editor">
-        <div className="modal-head">
-          <h3><IconChart className="head-ico" /> Grafik-Editor <small>JSXGraph</small></h3>
-          <button className="btn ghost small" onClick={onClose} aria-label="Schließen"><IconX /></button>
-        </div>
+    <Modal className="jsxb" ariaLabel="Grafik-Editor" onClose={onClose} title={<><IconChart className="head-ico" /> Grafik-Editor <small>JSXGraph</small></>}>
         <div className="jsxb-body">
           <div className="jsxb-form">
             {notice && <div className="issue info">{notice}</div>}
@@ -503,7 +503,6 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
             {initial ? "Grafik aktualisieren" : "Grafik einfügen"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

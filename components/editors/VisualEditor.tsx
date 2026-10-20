@@ -4,6 +4,7 @@
 // nicht editierbare Bausteine geschützt und beim Zurückschreiben unverändert eingesetzt.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDialogs } from "../Dialogs";
 import { IconClearFormat, IconList, IconListNum, IconPara } from "../icons";
 import { type InsertTokens, TBtn, TGroup, Toolbar } from "./TextToolbar";
 
@@ -72,6 +73,7 @@ interface Props {
 
 export default function VisualEditor({ value, onChange, minHeight = "300px", lead, end, onInsertApi, onEditGraph }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const dialogs = useDialogs();
   const store = useRef<string[]>([]);
   const lastEmitted = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -143,17 +145,39 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     onInsertApi?.((tokens) => tokens.forEach(insertProtected));
   });
 
-  const insertCas = () => {
-    const expr = window.prompt("Maxima-Ausdruck für {@…@}:", "");
-    if (expr) insertProtected(`{@${expr}@}`);
+  // Auswahl im Editor vor dem Dialog sichern und danach wiederherstellen
+  const saveSelection = (): Range | null => {
+    const root = ref.current;
+    const sel = document.getSelection();
+    return root && sel && sel.rangeCount && root.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null;
+  };
+  const restoreSelection = (saved: Range | null) => {
+    const root = ref.current;
+    if (!root) return false;
+    root.focus();
+    if (saved && root.contains(saved.commonAncestorContainer)) {
+      const sel = document.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(saved);
+    }
+    return true;
   };
 
-  const insertMath = () => {
-    const tex = window.prompt("LaTeX-Formel (wird als \\( … \\) eingefügt):", "");
-    if (tex) exec("insertText", `\\(${tex}\\)`);
+  const insertCas = async () => {
+    const saved = saveSelection();
+    const expr = await dialogs.prompt({ title: "Maxima-Ausdruck einfügen", label: "Ausdruck", mono: true, message: "Wird als {@…@} eingefügt.", confirmLabel: "Einfügen" });
+    if (!restoreSelection(saved) || !expr) return;
+    insertProtected(`{@${expr}@}`);
   };
 
-  const onDoubleClick = (e: React.MouseEvent) => {
+  const insertMath = async () => {
+    const saved = saveSelection();
+    const tex = await dialogs.prompt({ title: "LaTeX-Formel einfügen", label: "Formel", mono: true, message: "Wird als \( … \) eingefügt.", confirmLabel: "Einfügen" });
+    if (!restoreSelection(saved) || !tex) return;
+    exec("insertText", `\(${tex}\)`);
+  };
+
+  const onDoubleClick = async (e: React.MouseEvent) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-pi]");
     if (!el) return;
     const i = Number(el.dataset.pi);
@@ -170,8 +194,8 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     }
     const m = /^\{([@#])([\s\S]*)\1\}$/.exec(orig);
     if (!m) return;
-    const next = window.prompt("Ausdruck bearbeiten:", m[2]);
-    if (next === null) return;
+    const next = await dialogs.prompt({ title: "Ausdruck bearbeiten", label: "Ausdruck", initial: m[2], mono: true, confirmLabel: "Übernehmen" });
+    if (next === null || !el.isConnected || !ref.current) return;
     store.current[i] = `{${m[1]}${next}${m[1]}}`;
     el.textContent = store.current[i];
     emit();

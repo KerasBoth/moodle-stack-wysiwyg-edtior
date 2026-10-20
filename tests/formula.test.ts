@@ -16,6 +16,7 @@ import {
   resolveApply,
   splitFormulas,
 } from "../lib/editor/formula.ts";
+import { PI_MARK, PROTECT_RE, piMark, protect, restoreProtected } from "../lib/editor/protect.ts";
 
 const R = String.raw;
 const sources = (parts: (string | Formula)[]) => parts.filter((p): p is Formula => typeof p !== "string").map((p) => p.source);
@@ -66,6 +67,9 @@ test("splitFormulas: nicht erkannte Fälle bleiben Text", () => {
     R`<!-- <b>a</b> \(x\) -->`,
     R`\(x<!-- c -->y\)`,
     R`\( {@ "<b>" @} \)`,
+    // > in einem Attributwert in Anführungszeichen beendet das Tag nicht
+    R`<img alt="a>b \(x\)">`,
+    R`<img alt='a > \(x\)'>`,
   ]) {
     assert.deepEqual(sources(splitFormulas(t)), [], t);
   }
@@ -93,6 +97,10 @@ test("splitFormulas: Grenzfälle", () => {
   assert.deepEqual(sources(splitFormulas(R`[[jsxgraph]]x[[/jsxgraph]] \(y\)`)), [R`\(y\)`]);
   // Formel nach einer offenen Formel
   assert.deepEqual(sources(splitFormulas(R`\( offen <br> \(z\)`)), [R`\(z\)`]);
+  // nach einem Tag mit > im Attributwert geht die Erkennung weiter
+  assert.deepEqual(sources(splitFormulas(R`<img alt="a>b \(x\)"> <img alt='a > \(y\)' title="it's"> \(z\) <a title="x">\(w\)</a>`)), [R`\(z\)`, R`\(w\)`]);
+  // Anführungszeichen im Text (nicht im Tag) stören nicht
+  assert.deepEqual(sources(splitFormulas(R`<p class="a">it's "\(x\)"</p>`)), [R`\(x\)`]);
 });
 
 test("splitFormulas: tex ohne Begrenzer, getrimmt, aber \\  am Ende bleibt", () => {
@@ -120,6 +128,7 @@ const SAMPLES = [
   R`\(f''(x)\) und \(\{x\}\) und \(\left\{ x \right\}\)`,
   R`<p>\(x<br />y\)</p><p>\[\frac{1}{@n@}\]</p>`,
   R`<span>a \(x</span> y\) <img alt="\(x\)"> <!-- \(x\) {@a@} --> \(ok\) <!-- offen \(y\)`,
+  R`<img alt="a>b \(x\)"> <img alt='a > \(y\)' title="it's"> \(z\) <a title="x">\(w\)</a>`,
 ];
 
 test("splitFormulas: Roundtrip ist byte-gleich", () => {
@@ -414,4 +423,45 @@ test("resolveApply", () => {
   assert.deepEqual(resolveApply({ ...base, lastEdited: "field", fieldLatex: R`{\bbox[#e2e6e4]{\texttt{a''}}}` }), { kind: "undecodable" });
   // neue Formel
   assert.deepEqual(resolveApply({ original: null, kind: "display", lastEdited: "field", code: "", fieldLatex: R`f^{\prime}` }), { kind: "source", source: R`\[f'\]` });
+});
+
+// ---- Kästchen im Texteditor (protect/unprotect auf String-Ebene) -----------------------
+
+/** Wie unprotect im Browser: jedes Kästchen wird durch seine Marke ersetzt, danach aus dem Speicher eingesetzt. */
+const chipsToMarks = (html: string) => html.replace(/<span class="vchip[^"]*" contenteditable="false" data-pi="(\d+)"[^>]*>[^<]*<\/span>/g, (_m, i: string) => piMark(Number(i)));
+
+test("PROTECT_RE: Formel zuerst, dann Kommentare und die übrigen Konstrukte", () => {
+  assert.equal(PROTECT_RE.source, new RegExp([FORMULA_PATTERN, HTML_COMMENT_PATTERN, ...PROTECTED_PATTERNS].join("|")).source);
+  assert.equal(PROTECT_RE.flags, "gi");
+});
+
+test("protect: Formel-Kästchen", () => {
+  const store: string[] = [];
+  const html = protect(R`a \( x &lt; {@n@} \) b \[y\]`, store);
+  assert.deepEqual(store, [R`\( x &lt; {@n@} \)`, R`\[y\]`]);
+  assert.equal(
+    html,
+    R`a <span class="vchip vchip-math" contenteditable="false" data-pi="0" data-kind="inline" title="\( x &amp;lt; {@n@} \)">\( x &amp;lt; {@n@} \)</span>` +
+      R` b <span class="vchip vchip-math" contenteditable="false" data-pi="1" data-kind="display" title="\[y\]">\[y\]</span>`,
+  );
+});
+
+test("protect: Kommentare bleiben unverändert, ohne Kästchen", () => {
+  const store: string[] = [];
+  assert.equal(protect(R`<!-- \(x\) {@a@} [[input:ans1]] --> <!-- offen {@b@}`, store), R`<!-- \(x\) {@a@} [[input:ans1]] --> <!-- offen {@b@}`);
+  assert.deepEqual(store, []);
+});
+
+test("protect → unprotect ist byte-gleich", () => {
+  for (const t of [
+    ...SAMPLES,
+    R`<p>Sei \(f(x) = {@f@}\) mit {@a@} &amp; {#b#}: [[input:ans1]] [[validation:ans1]]</p><!-- \(x\) {@c@} -->`,
+    R`<p>&lt;\(a &lt; b\)&gt; &nbsp; \[ {@ "\)" @} \] [[feedback:prt1]]</p>`,
+    R`<p>{@[[1,2]]@} \( 1 + {@x@} \)</p>[[jsxgraph]]board("\(x\)");[[/jsxgraph]]`,
+  ]) {
+    const store: string[] = [];
+    const html = protect(t, store);
+    assert.ok(!html.includes(PI_MARK), t);
+    assert.equal(restoreProtected(chipsToMarks(html), store), t, t);
+  }
 });

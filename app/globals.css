@@ -435,6 +435,12 @@ a.tbtn, a.btn, a.mi { text-decoration: none; color: inherit; }
 .vchip-cas:hover { box-shadow: inset 0 0 0 2px var(--accent); }
 .vchip-jsx { display: block; margin: 8px 0; padding: 10px; background: var(--tok-block-bg); color: var(--tok-block-ink); border: 1px dashed var(--tok-block-line); font-family: var(--sans); }
 .vchip-block { background: var(--tok-block-bg); color: var(--tok-block-ink); box-shadow: inset 0 0 0 1px var(--tok-block-line); }
+/* Formeln: LaTeX-Code (bzw. bis MathJax fertig ist) oder gesetzt */
+.vchip-math { background: var(--tok-math-bg); color: var(--tok-math-ink); box-shadow: inset 0 0 0 1px #eab3cd; }
+.vchip-math.vchip-rendered { background: transparent; color: inherit; box-shadow: none; font: inherit; padding: 0 2px; white-space: normal; }
+.vchip-math.vchip-rendered:hover { box-shadow: inset 0 0 0 1px #eab3cd; }
+.vchip-math.vchip-display { display: block; margin: 6px 0; text-align: center; }
+.vchip-math mjx-container[jax="SVG"] { margin: 0 !important; pointer-events: none; }
 .visual-editor ::selection { background: #93d3bd; }
 @media (prefers-reduced-motion: reduce) { .tb, .btn { transition: none; } }
 

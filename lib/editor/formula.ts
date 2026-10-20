@@ -53,8 +53,9 @@ export const FORMULA_PATTERN: string =
   String.raw`(?=\\[(\[])` +
   // Vor dem Begrenzer eine gerade Anzahl Backslashes: \\( ist in MathJax ein Escape, kein Begrenzer.
   String.raw`(?<=(?:^|[^\\])(?:\\\\)*)` +
-  // Nicht innerhalb eines Tags (Attributwert). Kommentare überspringt HTML_COMMENT_PATTERN.
-  String.raw`(?<!<[A-Za-z\/!?][^<>]*)` +
+  // Nicht innerhalb eines Tags (Attributwert). Kommentare überspringt HTML_COMMENT_PATTERN. Ein > in einem
+  // Attributwert in Anführungszeichen beendet das Tag nicht; der Wert darf an der Stelle noch offen sein.
+  String.raw`(?<!<[A-Za-z\/!?](?:"[^"]*"|'[^']*'|[^<>"'])*(?:"[^"]*|'[^']*)?)` +
   String.raw`(?:\\\((?:${bodyToken(String.raw`\\\]`)})*?\\\)|\\\[(?:${bodyToken(String.raw`\\\)`)})*?\\\])`;
 
 /**

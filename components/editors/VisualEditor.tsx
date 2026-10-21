@@ -4,12 +4,13 @@
 // nicht editierbare Bausteine geschützt und beim Zurückschreiben unverändert eingesetzt.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { casToMathJax, parseFormula } from "@/lib/editor/formula";
+import { type Formula, casToMathJax, parseFormula } from "@/lib/editor/formula";
 import { type FormulaView, useFormulaView } from "@/lib/editor/formulaView";
 import { renderTex } from "@/lib/editor/mathjax";
 import { chipFor, piMark, protect, restoreProtected } from "@/lib/editor/protect";
 import { useDialogs } from "../Dialogs";
 import { IconClearFormat, IconList, IconListNum, IconPara } from "../icons";
+import FormulaEditor, { type FormulaApplyResult } from "./FormulaEditor";
 import { type InsertTokens, TBtn, TGroup, Toolbar } from "./TextToolbar";
 
 /** Der gespeicherte Text kommt ausschließlich aus `store`; der Inhalt der Kästchen (auch MathJax-SVG) zählt nicht. */
@@ -73,6 +74,15 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
   const [formulaView, setFormulaView] = useFormulaView();
   // Ansicht, in der die Formel-Kästchen zuletzt gefüllt wurden
   const filledView = useRef<FormulaView | null>(null);
+  // Aktuelle Ansicht für Aufrufe nach einem await (die Ansicht kann sich währenddessen geändert haben)
+  const viewRef = useRef(formulaView);
+  viewRef.current = formulaView;
+  // Offener Formel-Editor; `done` erhält das Ergebnis (null = Abbrechen)
+  const [formulaDlg, setFormulaDlg] = useState<{ initial: Formula | null; done: (r: FormulaApplyResult | null) => void } | null>(null);
+  const editFormula = (initial: Formula | null) =>
+    new Promise<FormulaApplyResult | null>((resolve) => {
+      setFormulaDlg({ initial, done: (r) => { setFormulaDlg(null); resolve(r); } });
+    });
 
   // Externe Änderungen (anderer Modus, andere Frage) übernehmen
   useEffect(() => {
@@ -145,7 +155,7 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     const i = store.current.length - 1;
     exec("insertHTML", chipFor(snippet, i) + "&nbsp;");
     const el = ref.current?.querySelector<HTMLElement>(`.vchip-math[data-pi="${i}"]`);
-    if (el) fillMathChip(el, store.current, formulaView);
+    if (el) fillMathChip(el, store.current, viewRef.current);
   };
 
   // Einfügefunktion für Menüs/Fußzeile des Aufrufers (bei jedem Rendern aktuell halten)
@@ -180,9 +190,31 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
 
   const insertMath = async () => {
     const saved = saveSelection();
-    const tex = await dialogs.prompt({ title: "LaTeX-Formel einfügen", label: "Formel", mono: true, message: "Wird als \\( … \\) eingefügt.", confirmLabel: "Einfügen" });
-    if (!restoreSelection(saved) || !tex) return;
-    exec("insertText", `\\(${tex}\\)`);
+    const result = await editFormula(null);
+    if (!restoreSelection(saved) || result?.kind !== "source") return;
+    insertProtected(result.source);
+  };
+
+  /** Formel-Kästchen im Formel-Editor bearbeiten; leere Formel nach Rückfrage entfernen. */
+  const editMathChip = async (el: HTMLElement, i: number, orig: string, initial: Formula) => {
+    const result = await editFormula(initial);
+    if (!result || !el.isConnected || !ref.current) return;
+    if (result.kind === "empty") {
+      const ok = await dialogs.confirm({ title: "Formel entfernen?", message: "Die Formel ist leer. Soll sie aus dem Text entfernt werden?", confirmLabel: "Entfernen", danger: true });
+      if (!ok || !el.isConnected) return;
+      el.remove();
+      emit();
+      return;
+    }
+    if (result.source === orig) return;
+    store.current[i] = result.source;
+    // Kästchen neu aufbauen (Art und Tooltip können sich geändert haben) und gemäß Ansicht füllen
+    const tpl = document.createElement("template");
+    tpl.innerHTML = chipFor(result.source, i);
+    const chip = tpl.content.firstElementChild as HTMLElement;
+    el.replaceWith(chip);
+    fillMathChip(chip, store.current, viewRef.current);
+    emit();
   };
 
   const onDoubleClick = async (e: React.MouseEvent) => {
@@ -200,6 +232,8 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
       onEditGraph(orig);
       return;
     }
+    const formula = el.classList.contains("vchip-math") ? parseFormula(orig) : null;
+    if (formula) { await editMathChip(el, i, orig, formula); return; }
     const m = /^\{([@#])([\s\S]*)\1\}$/.exec(orig);
     if (!m) return;
     const next = await dialogs.prompt({ title: "Ausdruck bearbeiten", label: "Ausdruck", initial: m[2], mono: true, confirmLabel: "Übernehmen" });
@@ -258,6 +292,7 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
         onPaste={onPaste}
         onDoubleClick={onDoubleClick}
       />
+      {formulaDlg && <FormulaEditor initial={formulaDlg.initial} onApply={formulaDlg.done} onClose={() => formulaDlg.done(null)} />}
     </>
   );
 }

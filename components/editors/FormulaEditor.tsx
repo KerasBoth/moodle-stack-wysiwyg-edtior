@@ -184,7 +184,8 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
   const [kind, setKind] = useState<FormulaKind>(initial?.kind ?? "inline");
   // Code, den MathLive nicht darstellen kann (Kollisionsschutz, Kästchen in Text): nur im Codefeld bearbeiten
   const fieldBlocked = casToMathLive(code) === null;
-  const [showCode, setShowCode] = useState(false);
+  // Einmal nötig gewordenes Codefeld bleibt offen (sonst verschwindet es mitten im Tippen, sobald der Code darstellbar wird)
+  const [showCode, setShowCode] = useState(fieldBlocked);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldUnreadable, setFieldUnreadable] = useState(false);
@@ -248,7 +249,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
       setLoad("ready");
       if (ml !== null) mf.focus();
     }, () => {
-      if (!disposed) setLoad("failed");
+      if (!disposed) { setLoad("failed"); setShowCode(true); }
     });
     return () => {
       disposed = true;
@@ -314,6 +315,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
     lastEdited.current = "code";
     setError(null);
     setFieldUnreadable(false);
+    if (casToMathLive(value) === null) setShowCode(true);
     setFieldFromCode(value); // nicht darstellbarer Code bleibt nur im Textfeld stehen
   };
 
@@ -440,8 +442,9 @@ function Palette({ group, onPick, onLeave }: { group: PaletteGroup; onPick: (key
       aria-label={group.label}
       style={{ gridTemplateColumns: `repeat(${Math.min(cols, group.keys.length)}, auto)` }}
       onKeyDown={onKeyDown}
-      // Fokus verlässt die Palette (Tab): schließen
-      onBlur={(e) => { if (!(e.relatedTarget instanceof Node && e.currentTarget.parentElement?.contains(e.relatedTarget))) onLeave(); }}
+      // Fokus verlässt die Palette (Tab): schließen. Ohne neues Fokusziel (Safari/Firefox auf macOS fokussieren
+      // Knöpfe beim Klick nicht) nicht schließen, sonst ginge der Klick verloren; Klicks daneben schließt der mousedown-Listener.
+      onBlur={(e) => { if (e.relatedTarget instanceof Node && !e.currentTarget.parentElement?.contains(e.relatedTarget)) onLeave(); }}
     >
       {group.keys.map((k, i) => (
         <button key={i} type="button" className={`fe-key${k.command ? " cmd" : ""}`} title={k.title} aria-label={k.title} onClick={() => onPick(k)}>

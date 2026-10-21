@@ -4,57 +4,79 @@
 // nicht editierbare Bausteine geschützt und beim Zurückschreiben unverändert eingesetzt.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type Formula, casToMathJax, parseFormula } from "@/lib/editor/formula";
+import { type FormulaView, useFormulaView } from "@/lib/editor/formulaView";
+import { renderTex } from "@/lib/editor/mathjax";
+import { chipFor, piMark, protect, restoreProtected, restoreProtectedText } from "@/lib/editor/protect";
 import { useDialogs } from "../Dialogs";
 import { IconClearFormat, IconList, IconListNum, IconPara } from "../icons";
+import FormulaEditor, { type FormulaApplyResult } from "./FormulaEditor";
 import { type InsertTokens, TBtn, TGroup, Toolbar } from "./TextToolbar";
 
-const PROTECT_RE = new RegExp(
-  [
-    String.raw`<script[\s\S]*?<\/script>`,
-    String.raw`<style[\s\S]*?<\/style>`,
-    String.raw`\[\[\s*(jsxgraph|comment|escape|geogebra|parsons|textdownload|javascript)\b[^\]]*\]\][\s\S]*?\[\[\s*\/\1\s*\]\]`,
-    String.raw`\[\[[^\]]*\]\]`,
-    String.raw`\{@[\s\S]*?@\}`,
-    String.raw`\{#[\s\S]*?#\}`,
-  ].join("|"),
-  "gi",
-);
-
-function escapeHtml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/** Ersetzt jedes Kästchen durch seine Marke (piMark); gibt zurück, ob es Kästchen gab. */
+function chipsToMarks(root: ParentNode): boolean {
+  const chips = root.querySelectorAll<HTMLElement>("[data-pi]");
+  chips.forEach((el) => el.replaceWith(document.createTextNode(piMark(Number(el.dataset.pi)))));
+  return chips.length > 0;
 }
 
-function chipFor(original: string, index: number, graphEditable = false): string {
-  let kind = "block";
-  let label = original;
-  let m: RegExpExecArray | null;
-  if ((m = /^\[\[\s*input:(\w+)/.exec(original))) { kind = "input"; label = `⌨ ${m[1]}`; }
-  else if ((m = /^\[\[\s*validation:(\w+)/.exec(original))) { kind = "validation"; label = `✎ Validierung ${m[1]}`; }
-  else if ((m = /^\[\[\s*feedback:(\w+)/.exec(original))) { kind = "feedback"; label = `✓ Feedback ${m[1]}`; }
-  else if (/^\[\[\s*jsxgraph/i.test(original)) { kind = "jsx"; label = graphEditable ? "📈 JSXGraph-Grafik – Doppelklick öffnet den Grafik-Editor" : "📈 JSXGraph-Grafik (im HTML-Modus bearbeiten)"; }
-  else if (/^<script/i.test(original)) { kind = "jsx"; label = "‹script› (im HTML-Modus bearbeiten)"; }
-  else if (/^<style/i.test(original)) { kind = "jsx"; label = "‹style›"; }
-  else if (original.startsWith("{@") || original.startsWith("{#")) { kind = "cas"; label = original; }
-  else if (/^\[\[\s*comment/i.test(original)) { kind = "block"; label = "💬 Kommentar"; }
-  const title = kind === "cas" ? "Doppelklick zum Bearbeiten" : original.length > 300 ? `${original.slice(0, 300)}…` : original;
-  return `<span class="vchip vchip-${kind}" contenteditable="false" data-pi="${index}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
-}
-
-function protect(src: string, store: string[], graphEditable = false): string {
-  return src.replace(PROTECT_RE, (m) => {
-    store.push(m);
-    return chipFor(m, store.length - 1, graphEditable);
-  });
-}
-
+/** Der gespeicherte Text kommt ausschließlich aus `store`; der Inhalt der Kästchen (auch MathJax-SVG) zählt nicht. */
 function unprotect(root: HTMLElement, store: string[]): string {
   const clone = root.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll<HTMLElement>("[data-pi]").forEach((el) => {
-    el.replaceWith(document.createTextNode(`${el.dataset.pi}`));
-  });
-  return clone.innerHTML
-    .replace(/(\d+)/g, (_, i: string) => store[Number(i)] ?? "")
-    .replace(/<br>(<\/p>)/g, "$1");
+  chipsToMarks(clone);
+  return restoreProtected(clone.innerHTML, store).replace(/<br>(<\/p>)/g, "$1");
+}
+
+/** Text so dekodieren, wie ihn der Browser aus HTML-Quelltext macht (nur für Formeln: sie enthalten keine Tags). */
+function decodeHtml(html: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  return tpl.content.textContent ?? "";
+}
+
+/**
+ * Klartext einer Auswahl, Kästchen als Quelltext (wie beim Speichern aus `store`, nicht der angezeigte Inhalt).
+ * null = keine Kästchen in der Auswahl (dann bleibt das normale Kopieren des Browsers).
+ */
+function selectionSourceText(range: Range, store: string[]): string | null {
+  const box = document.createElement("div");
+  box.appendChild(range.cloneContents());
+  if (!chipsToMarks(box)) return null;
+  // innerText braucht ein dargestelltes Element (Zeilenumbrüche zwischen Absätzen wie beim normalen Kopieren)
+  box.style.cssText = "position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none;white-space:normal";
+  document.body.appendChild(box);
+  const text = box.innerText;
+  box.remove();
+  return restoreProtectedText(text, store, decodeHtml);
+}
+
+// Laufende Darstellung je Kästchen; ein späterer Auftrag (Ansichtswechsel) macht frühere Ergebnisse ungültig.
+const mathJobs = new WeakMap<HTMLElement, number>();
+let mathJobSeq = 0;
+
+/** Füllt ein Formel-Kästchen gemäß Ansicht: LaTeX-Code bzw. MathJax (bis dahin der Code). Ändert `store` nicht. */
+function fillMathChip(el: HTMLElement, store: string[], view: FormulaView) {
+  const i = Number(el.dataset.pi);
+  const source = store[i];
+  const formula = source === undefined ? null : parseFormula(source);
+  const job = ++mathJobSeq;
+  mathJobs.set(el, job);
+  el.classList.remove("vchip-rendered");
+  el.classList.toggle("vchip-display", view === "rendered" && formula?.kind === "display");
+  el.textContent = source ?? "";
+  if (view === "latex" || !formula) return;
+  renderTex(casToMathJax(formula.tex), formula.kind === "display").then(
+    (node) => {
+      if (!el.isConnected || mathJobs.get(el) !== job || store[i] !== source) return;
+      el.replaceChildren(node);
+      el.classList.add("vchip-rendered");
+    },
+    () => { /* Ladefehler oder TeX-Fehler: Der Code bleibt stehen. */ },
+  );
+}
+
+function fillMathChips(root: HTMLElement, store: string[], view: FormulaView) {
+  root.querySelectorAll<HTMLElement>(".vchip-math[data-pi]").forEach((el) => fillMathChip(el, store, view));
 }
 
 interface Props {
@@ -77,6 +99,18 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
   const store = useRef<string[]>([]);
   const lastEmitted = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const [formulaView, setFormulaView] = useFormulaView();
+  // Ansicht, in der die Formel-Kästchen zuletzt gefüllt wurden
+  const filledView = useRef<FormulaView | null>(null);
+  // Aktuelle Ansicht für Aufrufe nach einem await (die Ansicht kann sich währenddessen geändert haben)
+  const viewRef = useRef(formulaView);
+  viewRef.current = formulaView;
+  // Offener Formel-Editor; `done` erhält das Ergebnis (null = Abbrechen)
+  const [formulaDlg, setFormulaDlg] = useState<{ initial: Formula | null; done: (r: FormulaApplyResult | null) => void } | null>(null);
+  const editFormula = (initial: Formula | null) =>
+    new Promise<FormulaApplyResult | null>((resolve) => {
+      setFormulaDlg({ initial, done: (r) => { setFormulaDlg(null); resolve(r); } });
+    });
 
   // Externe Änderungen (anderer Modus, andere Frage) übernehmen
   useEffect(() => {
@@ -84,7 +118,16 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     store.current = [];
     ref.current.innerHTML = protect(value, store.current, !!onEditGraph);
     lastEmitted.current = value;
+    fillMathChips(ref.current, store.current, formulaView);
+    filledView.current = formulaView;
   }, [value]);
+
+  // Ansichtswechsel: nur die Darstellung der Formel-Kästchen, der Text bleibt unverändert
+  useEffect(() => {
+    if (!ref.current || filledView.current === formulaView) return;
+    fillMathChips(ref.current, store.current, formulaView);
+    filledView.current = formulaView;
+  }, [formulaView]);
 
   const emit = useCallback(() => {
     window.clearTimeout(timer.current);
@@ -137,7 +180,10 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
 
   const insertProtected = (snippet: string) => {
     store.current.push(snippet);
-    exec("insertHTML", chipFor(snippet, store.current.length - 1) + "&nbsp;");
+    const i = store.current.length - 1;
+    exec("insertHTML", chipFor(snippet, i) + "&nbsp;");
+    const el = ref.current?.querySelector<HTMLElement>(`.vchip-math[data-pi="${i}"]`);
+    if (el) fillMathChip(el, store.current, viewRef.current);
   };
 
   // Einfügefunktion für Menüs/Fußzeile des Aufrufers (bei jedem Rendern aktuell halten)
@@ -172,9 +218,31 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
 
   const insertMath = async () => {
     const saved = saveSelection();
-    const tex = await dialogs.prompt({ title: "LaTeX-Formel einfügen", label: "Formel", mono: true, message: "Wird als \\( … \\) eingefügt.", confirmLabel: "Einfügen" });
-    if (!restoreSelection(saved) || !tex) return;
-    exec("insertText", `\\(${tex}\\)`);
+    const result = await editFormula(null);
+    if (!restoreSelection(saved) || result?.kind !== "source") return;
+    insertProtected(result.source);
+  };
+
+  /** Formel-Kästchen im Formel-Editor bearbeiten; leere Formel nach Rückfrage entfernen. */
+  const editMathChip = async (el: HTMLElement, i: number, orig: string, initial: Formula) => {
+    const result = await editFormula(initial);
+    if (!result || !el.isConnected || !ref.current) return;
+    if (result.kind === "empty") {
+      const ok = await dialogs.confirm({ title: "Formel entfernen?", message: "Die Formel ist leer. Soll sie aus dem Text entfernt werden?", confirmLabel: "Entfernen", danger: true });
+      if (!ok || !el.isConnected) return;
+      el.remove();
+      emit();
+      return;
+    }
+    if (result.source === orig) return;
+    store.current[i] = result.source;
+    // Kästchen neu aufbauen (Art und Tooltip können sich geändert haben) und gemäß Ansicht füllen
+    const tpl = document.createElement("template");
+    tpl.innerHTML = chipFor(result.source, i);
+    const chip = tpl.content.firstElementChild as HTMLElement;
+    el.replaceWith(chip);
+    fillMathChip(chip, store.current, viewRef.current);
+    emit();
   };
 
   const onDoubleClick = async (e: React.MouseEvent) => {
@@ -192,6 +260,8 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
       onEditGraph(orig);
       return;
     }
+    const formula = el.classList.contains("vchip-math") ? parseFormula(orig) : null;
+    if (formula) { await editMathChip(el, i, orig, formula); return; }
     const m = /^\{([@#])([\s\S]*)\1\}$/.exec(orig);
     if (!m) return;
     const next = await dialogs.prompt({ title: "Ausdruck bearbeiten", label: "Ausdruck", initial: m[2], mono: true, confirmLabel: "Übernehmen" });
@@ -208,6 +278,23 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     document.execCommand("insertText", false, text);
   };
 
+  // Kopieren/Ausschneiden: Kästchen als Quelltext (gesetzte Formeln zeigen sonst nur den MathJax-Text)
+  const onCopyOrCut = (e: React.ClipboardEvent, cut: boolean) => {
+    const root = ref.current;
+    const sel = document.getSelection();
+    if (!root || !sel || !sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) return;
+    const text = selectionSourceText(range, store.current);
+    if (text === null) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", text);
+    if (!cut) return;
+    document.execCommand("delete");
+    emit();
+    refreshActive();
+  };
+
   return (
     <>
       <Toolbar>
@@ -215,6 +302,9 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
         <TGroup label="Mathematik">
           <TBtn title="Maxima-Wert einfügen {@…@}" onClick={insertCas} wide><span className="glyph-code">{"{@ @}"}</span></TBtn>
           <TBtn title="Formel einfügen \( … \)" onClick={insertMath} wide><span className="glyph-math">∑ Formel</span></TBtn>
+          <TBtn title="Formeln: gesetzt / LaTeX" onClick={() => setFormulaView(formulaView === "rendered" ? "latex" : "rendered")} wide>
+            {formulaView === "rendered" ? <span className="glyph-math">x² gesetzt</span> : <span className="glyph-code">{"\\( \\) LaTeX"}</span>}
+          </TBtn>
         </TGroup>
         <TGroup label="Zeichenformat">
           <TBtn title="Fett" onClick={() => exec("bold")} active={!!active.bold}><b>B</b></TBtn>
@@ -245,8 +335,11 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
         onKeyUp={refreshActive}
         onMouseUp={refreshActive}
         onPaste={onPaste}
+        onCopy={(e) => onCopyOrCut(e, false)}
+        onCut={(e) => onCopyOrCut(e, true)}
         onDoubleClick={onDoubleClick}
       />
+      {formulaDlg && <FormulaEditor initial={formulaDlg.initial} onApply={formulaDlg.done} onClose={() => formulaDlg.done(null)} />}
     </>
   );
 }

@@ -16,7 +16,7 @@ import {
   resolveApply,
   splitFormulas,
 } from "../lib/editor/formula.ts";
-import { PI_MARK, PROTECT_RE, piMark, protect, restoreProtected } from "../lib/editor/protect.ts";
+import { PI_MARK, PROTECT_RE, piMark, protect, restoreProtected, restoreProtectedText } from "../lib/editor/protect.ts";
 
 const R = String.raw;
 const sources = (parts: (string | Formula)[]) => parts.filter((p): p is Formula => typeof p !== "string").map((p) => p.source);
@@ -472,4 +472,15 @@ test("protect → unprotect ist byte-gleich", () => {
     assert.ok(!html.includes(PI_MARK), t);
     assert.equal(restoreProtected(chipsToMarks(html), store), t, t);
   }
+});
+
+test("restoreProtectedText: Kästchen in kopiertem Text werden zu ihrem Quelltext, Formeln wie im Text dekodiert", () => {
+  const store = [R`\( x &lt; {@n@} \)`, R`{@a@}`, R`[[input:ans1]]`, R`\[a &amp; b\]`];
+  const text = `Sei ${piMark(0)} mit ${piMark(1)}:\n\n${piMark(2)} ${piMark(3)} ok`;
+  assert.equal(restoreProtectedText(text, store), R`Sei \( x < {@n@} \) mit {@a@}:` + "\n\n" + R`[[input:ans1]] \[a & b\] ok`);
+  // eigener Dekodierer (im Browser: HTML-Parser), unbekannte Marke wird leer
+  assert.equal(restoreProtectedText(`${piMark(0)}|${piMark(9)}`, store, (s) => s.toUpperCase()), R`\( X &LT; {@N@} \)|`);
+  // Ausschneiden → Einfügen als Text → Speichern ergibt den ursprünglichen Quelltext
+  const pasted = restoreProtectedText(piMark(0), store).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  assert.equal(pasted, store[0]);
 });

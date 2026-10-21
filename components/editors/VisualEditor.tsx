@@ -7,19 +7,47 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type Formula, casToMathJax, parseFormula } from "@/lib/editor/formula";
 import { type FormulaView, useFormulaView } from "@/lib/editor/formulaView";
 import { renderTex } from "@/lib/editor/mathjax";
-import { chipFor, piMark, protect, restoreProtected } from "@/lib/editor/protect";
+import { chipFor, piMark, protect, restoreProtected, restoreProtectedText } from "@/lib/editor/protect";
 import { useDialogs } from "../Dialogs";
 import { IconClearFormat, IconList, IconListNum, IconPara } from "../icons";
 import FormulaEditor, { type FormulaApplyResult } from "./FormulaEditor";
 import { type InsertTokens, TBtn, TGroup, Toolbar } from "./TextToolbar";
 
+/** Ersetzt jedes Kästchen durch seine Marke (piMark); gibt zurück, ob es Kästchen gab. */
+function chipsToMarks(root: ParentNode): boolean {
+  const chips = root.querySelectorAll<HTMLElement>("[data-pi]");
+  chips.forEach((el) => el.replaceWith(document.createTextNode(piMark(Number(el.dataset.pi)))));
+  return chips.length > 0;
+}
+
 /** Der gespeicherte Text kommt ausschließlich aus `store`; der Inhalt der Kästchen (auch MathJax-SVG) zählt nicht. */
 function unprotect(root: HTMLElement, store: string[]): string {
   const clone = root.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll<HTMLElement>("[data-pi]").forEach((el) => {
-    el.replaceWith(document.createTextNode(piMark(Number(el.dataset.pi))));
-  });
+  chipsToMarks(clone);
   return restoreProtected(clone.innerHTML, store).replace(/<br>(<\/p>)/g, "$1");
+}
+
+/** Text so dekodieren, wie ihn der Browser aus HTML-Quelltext macht (nur für Formeln: sie enthalten keine Tags). */
+function decodeHtml(html: string): string {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  return tpl.content.textContent ?? "";
+}
+
+/**
+ * Klartext einer Auswahl, Kästchen als Quelltext (wie beim Speichern aus `store`, nicht der angezeigte Inhalt).
+ * null = keine Kästchen in der Auswahl (dann bleibt das normale Kopieren des Browsers).
+ */
+function selectionSourceText(range: Range, store: string[]): string | null {
+  const box = document.createElement("div");
+  box.appendChild(range.cloneContents());
+  if (!chipsToMarks(box)) return null;
+  // innerText braucht ein dargestelltes Element (Zeilenumbrüche zwischen Absätzen wie beim normalen Kopieren)
+  box.style.cssText = "position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none;white-space:normal";
+  document.body.appendChild(box);
+  const text = box.innerText;
+  box.remove();
+  return restoreProtectedText(text, store, decodeHtml);
 }
 
 // Laufende Darstellung je Kästchen; ein späterer Auftrag (Ansichtswechsel) macht frühere Ergebnisse ungültig.
@@ -250,6 +278,23 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     document.execCommand("insertText", false, text);
   };
 
+  // Kopieren/Ausschneiden: Kästchen als Quelltext (gesetzte Formeln zeigen sonst nur den MathJax-Text)
+  const onCopyOrCut = (e: React.ClipboardEvent, cut: boolean) => {
+    const root = ref.current;
+    const sel = document.getSelection();
+    if (!root || !sel || !sel.rangeCount || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) return;
+    const text = selectionSourceText(range, store.current);
+    if (text === null) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", text);
+    if (!cut) return;
+    document.execCommand("delete");
+    emit();
+    refreshActive();
+  };
+
   return (
     <>
       <Toolbar>
@@ -290,6 +335,8 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
         onKeyUp={refreshActive}
         onMouseUp={refreshActive}
         onPaste={onPaste}
+        onCopy={(e) => onCopyOrCut(e, false)}
+        onCut={(e) => onCopyOrCut(e, true)}
         onDoubleClick={onDoubleClick}
       />
       {formulaDlg && <FormulaEditor initial={formulaDlg.initial} onApply={formulaDlg.done} onClose={() => formulaDlg.done(null)} />}

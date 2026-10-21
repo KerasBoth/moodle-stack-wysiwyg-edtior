@@ -1,7 +1,7 @@
 // Geschützte Konstrukte des Texteditors: Formeln, {@…@}, [[…]], <script> usw. werden zu nicht editierbaren
 // Kästchen und beim Zurückschreiben unverändert aus dem Speicher eingesetzt. Reine String-Funktionen ohne DOM.
 
-import { PROTECT_PATTERN, parseFormula } from "./formula.ts";
+import { PROTECT_PATTERN, decodeEntities, parseFormula } from "./formula.ts";
 
 // Formeln zuerst (eine Formel mit {@…@} ist ein Kästchen). Kommentare werden mit erkannt, aber unverändert
 // durchgereicht. Gleiche Quelle wie splitFormulas.
@@ -47,4 +47,16 @@ export function protect(src: string, store: string[], graphEditable = false): st
 /** Setzt für jede Marke (piMark) den Originaltext aus `store` ein. */
 export function restoreProtected(html: string, store: readonly string[]): string {
   return html.replace(PI_MARK_RE, (_, i: string) => store[Number(i)] ?? "");
+}
+
+/**
+ * Wie restoreProtected, aber für Klartext (Kopieren/Ausschneiden): Formeln werden mit `decode` dekodiert, so wie sie
+ * als Text im Editor stünden (eingefügter Text wird beim Speichern wieder kodiert); die übrigen Kästchen geben ihren
+ * Originaltext unverändert.
+ */
+export function restoreProtectedText(text: string, store: readonly string[], decode: (html: string) => string = decodeEntities): string {
+  return text.replace(PI_MARK_RE, (_, i: string) => {
+    const source = store[Number(i)] ?? "";
+    return source.startsWith("\\") && parseFormula(source) ? decode(source) : source;
+  });
 }

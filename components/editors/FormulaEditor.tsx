@@ -21,7 +21,7 @@ type LastEdited = "none" | "field" | "code";
 const MSG_UNDECODABLE = "Die Formel enthält ein Maxima-Kästchen, das nicht sicher zurückübersetzt werden kann – bitte im LaTeX-Code prüfen.";
 const MSG_IN_BOX = "Im Maxima-Kästchen lassen sich keine Formel-Elemente einfügen. Bitte den Cursor zuerst aus dem Kästchen bewegen.";
 const MSG_NOT_IN_MATRIX = "Zeilen und Spalten lassen sich nur in einer Matrix einfügen oder entfernen. Bitte den Cursor zuerst in eine Matrix setzen.";
-const MSG_IN_TEXT ="Ein Maxima-Kästchen lässt sich nicht in Text einfügen. Bitte den Cursor zuerst in den Formelteil bewegen.";
+const MSG_IN_TEXT = "Ein Maxima-Kästchen lässt sich nicht in Text einfügen. Bitte den Cursor zuerst in den Formelteil bewegen.";
 
 // ---- MathLive einmalig laden -------------------------------------------------------------------------
 

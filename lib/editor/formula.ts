@@ -14,7 +14,7 @@ export interface Formula {
 
 // ---- Erkennen ----------------------------------------------------------------------------
 
-/** Die übrigen geschützten Konstrukte des Texteditors (gleiche Liste wie PROTECT_RE in VisualEditor.tsx). */
+/** Die übrigen geschützten Konstrukte des Texteditors (Teil von PROTECT_PATTERN, daraus baut lib/editor/protect.ts PROTECT_RE). */
 export const PROTECTED_PATTERNS: readonly string[] = [
   String.raw`<script[\s\S]*?<\/script>`,
   String.raw`<style[\s\S]*?<\/style>`,

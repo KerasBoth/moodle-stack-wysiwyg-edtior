@@ -7,12 +7,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Prt, StackQuestion } from "@/lib/stack/model";
 import { layoutPrt, prtOverview } from "@/lib/stack/prtgraph";
+import { useT } from "../I18nProvider";
 
 // ---- Übersicht: Teilaufgabe → Eingabe → PRT ------------------------------------------------
 
 type Hover = { kind: "input" | "prt"; name: string } | null;
 
 export function PrtOverview({ q, selected, onSelect }: { q: StackQuestion; selected: string | null; onSelect: (prt: string) => void }) {
+  const t = useT();
   const data = useMemo(() => prtOverview(q), [q]);
   const box = useRef<HTMLDivElement>(null);
   const inputEls = useRef(new Map<string, HTMLElement>());
@@ -52,7 +54,7 @@ export function PrtOverview({ q, selected, onSelect }: { q: StackQuestion; selec
     return data.edges.some((e) => (kind === "input" ? e.input === name && e.prt === hover.name : e.prt === name && e.input === hover.name));
   };
 
-  if (!data.inputs.length && !data.prts.length) return <div className="empty">Noch keine Eingaben und Rückmeldebäume.</div>;
+  if (!data.inputs.length && !data.prts.length) return <div className="empty">{t("sections.diagram.empty")}</div>;
 
   return (
     <div className="pmap" ref={box}>
@@ -69,18 +71,18 @@ export function PrtOverview({ q, selected, onSelect }: { q: StackQuestion; selec
         })}
       </svg>
       <div className="pmap-col">
-        <div className="pmap-head">Teilaufgabe und Eingabe</div>
+        <div className="pmap-head">{t("sections.diagram.inputsHead")}</div>
         {data.inputs.map((i) => {
           const r = related("input", i.name);
           return (
             <div key={i.name} ref={(el) => { if (el) inputEls.current.set(i.name, el); else inputEls.current.delete(i.name); }}
               className={`pmap-input${r === true ? " on" : r === false ? " off" : ""}`}
               onMouseEnter={() => setHover({ kind: "input", name: i.name })} onMouseLeave={() => setHover(null)}>
-              <span className={`pmap-label${i.label ? "" : " none"}`}>{i.label || (i.position < 0 ? "nicht im Fragetext" : "ohne Beschriftung")}</span>
+              <span className={`pmap-label${i.label ? "" : " none"}`}>{i.label || t(i.position < 0 ? "sections.diagram.notInText" : "sections.diagram.noLabel")}</span>
               <span className="pmap-chips">
                 <span className="tok tok-input">{i.name}</span>
                 <span className="pmap-type">{i.type}</span>
-                {!i.prts.length && <span className="chip warn" title="Keine PRT wertet diese Eingabe aus">nicht bewertet</span>}
+                {!i.prts.length && <span className="chip warn" title={t("sections.diagram.notGradedTitle")}>{t("sections.diagram.notGraded")}</span>}
               </span>
             </div>
           );
@@ -88,21 +90,21 @@ export function PrtOverview({ q, selected, onSelect }: { q: StackQuestion; selec
       </div>
       <div className="pmap-gap" />
       <div className="pmap-col">
-        <div className="pmap-head">Rückmeldebaum</div>
+        <div className="pmap-head">{t("sections.diagram.prtsHead")}</div>
         {data.prts.map((p) => {
           const r = related("prt", p.name);
           return (
             <button key={p.name} type="button" ref={(el) => { if (el) prtEls.current.set(p.name, el); else prtEls.current.delete(p.name); }}
               className={`pmap-prt${p.name === selected ? " sel" : ""}${r === true ? " on" : r === false ? " off" : ""}`}
               onMouseEnter={() => setHover({ kind: "prt", name: p.name })} onMouseLeave={() => setHover(null)}
-              onClick={() => onSelect(p.name)} title={`Baum von ${p.name} anzeigen`}>
+              onClick={() => onSelect(p.name)} title={t("sections.diagram.showTree", { name: p.name })}>
               <span className="pmap-label" title={p.tests.join(", ")}>
-                {p.nodeCount} Knoten: {p.tests.join(", ")}
+                {t("sections.diagram.nodeTests", { count: p.nodeCount, tests: p.tests.join(", ") })}
               </span>
               <span className="pmap-chips">
                 <span className="tok tok-feedback">{p.name}</span>
-                <span className="pmap-meta">Gewicht {Number(p.weight) || p.weight}</span>
-                {!p.inputs.length && <span className="chip warn">keine Eingabe</span>}
+                <span className="pmap-meta">{t("sections.diagram.weight", { weight: Number(p.weight) || p.weight })}</span>
+                {!p.inputs.length && <span className="chip warn">{t("sections.prts.noInput")}</span>}
               </span>
             </button>
           );
@@ -125,6 +127,7 @@ const PAD = 18;
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 export function PrtTree({ prt, onNode }: { prt: Prt; onNode?: (index: number) => void }) {
+  const t = useT();
   const layout = useMemo(() => layoutPrt(prt), [prt]);
   // seitlicher Platz für außen herumgeführte Querverweise
   const side = layout.edges.some((e) => e.cross) ? 64 : 0;
@@ -139,7 +142,7 @@ export function PrtTree({ prt, onNode }: { prt: Prt; onNode?: (index: number) =>
   return (
     <div className="ptree-scroll">
       <svg className="ptree" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
-        aria-label={`Baumdiagramm ${prt.name}: ${prt.nodes.length} Knoten`}>
+        aria-label={t("sections.diagram.treeLabel", { name: prt.name, count: prt.nodes.length })}>
         <defs>
           {(["true", "false"] as const).map((b) => (
             <marker key={b} id={`${uid}-arrow-${b}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -172,7 +175,7 @@ export function PrtTree({ prt, onNode }: { prt: Prt; onNode?: (index: number) =>
           return (
             <g key={`${e.from}-${e.branch}`} className={`ptree-edge ${e.branch}${e.cross ? " cross" : ""}`}>
               <path d={d} markerEnd={`url(#${uid}-arrow-${e.branch})`} />
-              <text x={label.x} y={label.y} textAnchor={side < 0 ? "end" : "start"}>{e.branch === "true" ? "wahr" : "falsch"}</text>
+              <text x={label.x} y={label.y} textAnchor={side < 0 ? "end" : "start"}>{t(e.branch === "true" ? "sections.prts.branchTrue" : "sections.prts.branchFalse")}</text>
             </g>
           );
         })}
@@ -181,9 +184,9 @@ export function PrtTree({ prt, onNode }: { prt: Prt; onNode?: (index: number) =>
           const p = endPos.get(e.id)!;
           return (
             <g key={e.id} className={`ptree-end ${e.branch}`} transform={`translate(${p.x - END_W / 2},${p.y})`}>
-              <title>{`Ende${e.note ? ` – Antwortnotiz ${e.note}` : ""}`}</title>
+              <title>{e.note ? t("sections.diagram.endNote", { note: e.note }) : t("sections.prts.end")}</title>
               <rect width={END_W} height={END_H} rx={END_H / 2} />
-              <text x={END_W / 2} y={15} textAnchor="middle" className="ptree-end-label">Ende</text>
+              <text x={END_W / 2} y={15} textAnchor="middle" className="ptree-end-label">{t("sections.prts.end")}</text>
               <text x={END_W / 2} y={30} textAnchor="middle" className="ptree-end-score">{e.score}</text>
             </g>
           );
@@ -197,7 +200,9 @@ export function PrtTree({ prt, onNode }: { prt: Prt; onNode?: (index: number) =>
             <g key={n.id} className={`ptree-node${n.reachable ? "" : " unreachable"}${onNode ? " clickable" : ""}`}
               transform={`translate(${p.x - NODE_W / 2},${p.y})`} onClick={() => onNode?.(n.index)}
               tabIndex={onNode ? 0 : undefined} onKeyDown={(e) => { if (onNode && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onNode(n.index); } }}>
-              <title>{`Knoten ${Number(n.id) + 1}${f.description ? `: ${f.description}` : ""}\n${f.answertest}(${f.sans}, ${f.tans}${f.testoptions ? `, ${f.testoptions}` : ""})${n.reachable ? "" : "\nNicht vom ersten Knoten aus erreichbar"}`}</title>
+              <title>{`${f.description
+                ? t("sections.diagram.nodeDescription", { n: Number(n.id) + 1, description: f.description })
+                : t("sections.prts.node", { n: Number(n.id) + 1 })}\n${f.answertest}(${f.sans}, ${f.tans}${f.testoptions ? `, ${f.testoptions}` : ""})${n.reachable ? "" : `\n${t("sections.diagram.unreachable")}`}`}</title>
               <rect width={NODE_W} height={NODE_H} rx={9} />
               <circle cx={20} cy={20} r={11} className="ptree-num" />
               <text x={20} y={24} textAnchor="middle" className="ptree-num-text">{Number(n.id) + 1}</text>

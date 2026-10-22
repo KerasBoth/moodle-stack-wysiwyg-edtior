@@ -8,11 +8,12 @@ import { MaximaEditor } from "../editors/CodeEditors";
 import { useDialogs } from "../Dialogs";
 import { IconDice, IconFlask, IconPlus, IconTrash, IconX } from "../icons";
 import { SectionHead, Select } from "./BasicSections";
+import { useT } from "../I18nProvider";
 
 function defaultTest(q: StackQuestion, n: number): QTest {
   return {
     testcase: String(n),
-    description: "Musterlösung erhält volle Punktzahl",
+    description: "Musterlösung erhält volle Punktzahl", // Inhalt (ins XML), nicht übersetzen
     inputs: q.inputs.map((i) => ({
       name: i.fields.name,
       value: ["dropdown", "radio"].includes(i.fields.type) ? `first(mcq_correct(${i.fields.tans}))`
@@ -32,6 +33,7 @@ function stripTags(html: string) {
 }
 
 export default function TestsSection({ q, update, seed, setSeed }: SectionProps) {
+  const t = useT();
   const dialogs = useDialogs();
   const [runAll, setRunAll] = useState<{ seed: string; passed: number; total: number; failed: string[] }[] | null>(null);
 
@@ -41,11 +43,11 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
       try {
         m.set(s, stripTags(buildPreview(q, Number(s)).noteHtml));
       } catch {
-        m.set(s, "Fehler");
+        m.set(s, t("common.error"));
       }
     }
     return m;
-  }, [q]);
+  }, [q, t]);
   const noteCounts = new Map<string, number>();
   for (const n of notes.values()) noteCounts.set(n, (noteCounts.get(n) ?? 0) + 1);
 
@@ -71,7 +73,10 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
         seed: s,
         passed: out.filter((o) => o.passed).length,
         total: out.length,
-        failed: out.filter((o) => !o.passed).map((o) => `Test ${o.testcase}: ${o.rows.filter((r) => !r.passed).map((r) => `${r.prt} (ist ${r.actualScore ?? "–"}/${r.actualNote})`).join(", ")}${o.inputErrors.join("; ")}`),
+        failed: out.filter((o) => !o.passed).map((o) => t("sections.tests.failedTest", {
+          testcase: o.testcase,
+          rows: o.rows.filter((r) => !r.passed).map((r) => t("sections.tests.failedRow", { prt: r.prt, score: r.actualScore ?? "–", note: r.actualNote })).join(", "),
+        }) + o.inputErrors.join("; ")),
       };
     }));
   };
@@ -81,24 +86,24 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
 
   return (
     <div className="section">
-      <SectionHead title="Tests & Varianten" desc="Bereitgestellte Varianten (deployed seeds) und automatische Fragetests" />
+      <SectionHead title={t("editor.nav.tests")} desc={t("sections.tests.desc")} />
 
       <div className="card">
         <div className="card-head">
-          <h3>Varianten</h3>
-          <span className="sub" title="Die Vorschau nutzt einen eigenen Zufallsgenerator. Zu einem Seed gehören in Moodle andere Zufallswerte als hier – die Varianten sind aber gleich verteilt.">{q.deployedseeds.length} bereitgestellt · Fragenotizen müssen verschieden sein · lokale Zufallswerte ≠ Moodle ⓘ</span>
+          <h3>{t("sections.tests.variants")}</h3>
+          <span className="sub" title={t("sections.tests.variantsInfoTitle")}>{t("sections.tests.variantsInfo", { count: q.deployedseeds.length })}</span>
           <div className="right">
-            <button className="btn small" disabled={q.deployedseeds.includes(String(seed))} onClick={() => update((x) => { x.deployedseeds.push(String(seed)); })}><IconPlus /> Aktueller Seed</button>
-            <button className="btn small" onClick={() => addRandomSeeds(5)}><IconDice /> 5 zufällige</button>
+            <button className="btn small" disabled={q.deployedseeds.includes(String(seed))} onClick={() => update((x) => { x.deployedseeds.push(String(seed)); })}><IconPlus /> {t("sections.tests.addCurrentSeed")}</button>
+            <button className="btn small" onClick={() => addRandomSeeds(5)}><IconDice /> {t("sections.tests.addRandom", { count: 5 })}</button>
             <button className="btn small danger" disabled={!q.deployedseeds.length} onClick={async () => {
-              if (await dialogs.confirm({ title: "Varianten entfernen?", message: "Alle Varianten entfernen?", confirmLabel: "Alle entfernen", danger: true })) update((x) => { x.deployedseeds = []; });
-            }}>Alle entfernen</button>
+              if (await dialogs.confirm({ title: t("sections.tests.removeAllTitle"), message: t("sections.tests.removeAllMessage"), confirmLabel: t("sections.tests.removeAll"), danger: true })) update((x) => { x.deployedseeds = []; });
+            }}>{t("sections.tests.removeAll")}</button>
           </div>
         </div>
         <div className="card-body" style={{ padding: 0, maxHeight: 300, overflow: "auto" }}>
-          {q.deployedseeds.length === 0 ? <div className="empty" style={{ margin: 12 }}>Keine Varianten – Moodle erzeugt dann zufällige.</div> : (
+          {q.deployedseeds.length === 0 ? <div className="empty" style={{ margin: 12 }}>{t("sections.tests.noVariants")}</div> : (
             <table className="vt">
-              <thead><tr><th style={{ width: 40 }}>#</th><th style={{ width: 130 }}>Seed</th><th>Fragenotiz</th><th style={{ width: 80 }}></th></tr></thead>
+              <thead><tr><th style={{ width: 40 }}>#</th><th style={{ width: 130 }}>{t("sections.tests.seed")}</th><th>{t("sections.general.questionNote")}</th><th style={{ width: 80 }}></th></tr></thead>
               <tbody>
                 {q.deployedseeds.map((s, i) => {
                   const note = notes.get(s) ?? "";
@@ -106,8 +111,8 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
                   return (
                     <tr key={s + i} style={String(seed) === s ? { background: "var(--accent-soft)" } : undefined}>
                       <td>{i + 1}</td>
-                      <td className="name"><button className="btn ghost small mono" onClick={() => setSeed(Number(s))} title="In der Vorschau anzeigen">{s}</button></td>
-                      <td className="val">{note} {dup && <span className="chip warn">doppelt</span>}</td>
+                      <td className="name"><button className="btn ghost small mono" onClick={() => setSeed(Number(s))} title={t("sections.tests.showInPreview")}>{s}</button></td>
+                      <td className="val">{note} {dup && <span className="chip warn">{t("sections.tests.duplicate")}</span>}</td>
                       <td><button className="btn small ghost danger" onClick={() => update((x) => { x.deployedseeds.splice(i, 1); })}><IconX /></button></td>
                     </tr>
                   );
@@ -120,11 +125,11 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
 
       <div className="card">
         <div className="card-head">
-          <h3>Fragetests</h3>
-          <span className="sub">Testeingaben sind Maxima-Ausdrücke und dürfen Fragevariablen nutzen</span>
+          <h3>{t("sections.tests.questionTests")}</h3>
+          <span className="sub">{t("sections.tests.questionTestsSub")}</span>
           <div className="right">
-            <button className="btn small" onClick={() => update((x) => { x.qtests.push(defaultTest(x, Math.max(0, ...x.qtests.map((t) => Number(t.testcase) || 0)) + 1)); })}><IconPlus /> Test</button>
-            <button className="btn small primary" disabled={!q.qtests.length} onClick={runEverything}><IconFlask /> Alle Varianten testen</button>
+            <button className="btn small" onClick={() => update((x) => { x.qtests.push(defaultTest(x, Math.max(0, ...x.qtests.map((qt) => Number(qt.testcase) || 0)) + 1)); })}><IconPlus /> {t("sections.tests.addTest")}</button>
+            <button className="btn small primary" disabled={!q.qtests.length} onClick={runEverything}><IconFlask /> {t("sections.tests.runAll")}</button>
           </div>
         </div>
         <div className="card-body">
@@ -133,29 +138,29 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
               <div className="flow">
                 {runAll.map((r) => (
                   <button key={r.seed} className={`chip ${r.passed === r.total ? "accent" : "err"}`} style={{ cursor: "pointer" }}
-                    title={r.failed.join("\n") || "alle bestanden"} onClick={() => setSeed(Number(r.seed))}>
+                    title={r.failed.join("\n") || t("sections.tests.allPassedTitle")} onClick={() => setSeed(Number(r.seed))}>
                     {r.seed}: {r.passed}/{r.total}
                   </button>
                 ))}
               </div>
               <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                {runAll.every((r) => r.passed === r.total) ? "✔ Alle Tests in allen Varianten bestanden (lokale Auswertung)." : "Rot markierte Varianten anklicken, um sie in der Vorschau zu öffnen."}
+                {t(runAll.every((r) => r.passed === r.total) ? "sections.tests.allPassed" : "sections.tests.clickFailed")}
               </div>
             </div>
           )}
-          {q.qtests.length === 0 && <div className="empty">Noch keine Tests. „+ Test“ legt einen Test mit der Musterlösung an.</div>}
-          {q.qtests.map((t, ti) => {
+          {q.qtests.length === 0 && <div className="empty">{t("sections.tests.noTests")}</div>}
+          {q.qtests.map((qt, ti) => {
             const setT = (fn: (x: QTest) => void) => update((x) => fn(x.qtests[ti]));
             return (
               <div className="node" key={ti}>
                 <div className="node-head">
-                  <span className="node-num">{t.testcase}</span>
-                  <input className="inp" value={t.description} onChange={(e) => setT((x) => { x.description = e.target.value; })} />
+                  <span className="node-num">{qt.testcase}</span>
+                  <input className="inp" value={qt.description} onChange={(e) => setT((x) => { x.description = e.target.value; })} />
                   <button className="btn small danger" onClick={() => update((x) => { x.qtests.splice(ti, 1); })}><IconTrash /></button>
                 </div>
                 <div className="node-body">
-                  <div className="flabel" style={{ marginBottom: 6 }}>Eingaben</div>
-                  {t.inputs.map((inp, ii) => (
+                  <div className="flabel" style={{ marginBottom: 6 }}>{t("editor.nav.inputs")}</div>
+                  {qt.inputs.map((inp, ii) => (
                     <div key={ii} style={{ display: "grid", gridTemplateColumns: "130px 1fr 32px", gap: 8, marginBottom: 6 }}>
                       <Select value={inp.name} onChange={(v) => setT((x) => { x.inputs[ii].name = v; })} options={inputNames} />
                       <MaximaEditor mode="expr" value={inp.value} onChange={(v) => setT((x) => { x.inputs[ii].value = v; })} />
@@ -165,13 +170,13 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
                   <button className="btn small" onClick={() => setT((x) => {
                     const free = q.inputs.find((i) => !x.inputs.some((y) => y.name === i.fields.name));
                     x.inputs.push({ name: free?.fields.name ?? q.inputs[0]?.fields.name ?? "ans1", value: "" });
-                  })}><IconPlus /> Eingabe</button>
+                  })}><IconPlus /> {t("sections.inputs.add")}</button>
 
-                  <div className="flabel" style={{ margin: "14px 0 6px" }}>Erwartete Ergebnisse</div>
+                  <div className="flabel" style={{ margin: "14px 0 6px" }}>{t("sections.tests.expected")}</div>
                   <table className="vt">
-                    <thead><tr><th>PRT</th><th>Punkte</th><th>Strafe</th><th>Antwortnotiz</th><th></th></tr></thead>
+                    <thead><tr><th>{t("sections.tests.prt")}</th><th>{t("sections.prts.score")}</th><th>{t("sections.prts.penalty")}</th><th>{t("sections.prts.answerNote")}</th><th></th></tr></thead>
                     <tbody>
-                      {t.expected.map((ex, ei) => (
+                      {qt.expected.map((ex, ei) => (
                         <tr key={ei}>
                           <td style={{ width: 120 }}><Select value={ex.name} onChange={(v) => setT((x) => { x.expected[ei].name = v; })} options={prtNames} /></td>
                           <td style={{ width: 110 }}><input className="inp" value={ex.expectedscore} onChange={(e) => setT((x) => { x.expected[ei].expectedscore = e.target.value; })} /></td>
@@ -185,7 +190,7 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
                   <button className="btn small" style={{ marginTop: 6 }} onClick={() => setT((x) => {
                     const free = q.prts.find((p) => !x.expected.some((y) => y.name === p.name));
                     x.expected.push({ name: free?.name ?? q.prts[0]?.name ?? "prt1", expectedscore: "1.0000000", expectedpenalty: "0.0000000", expectedanswernote: "" });
-                  })}><IconPlus /> Erwartung</button>
+                  })}><IconPlus /> {t("sections.tests.addExpectation")}</button>
                 </div>
               </div>
             );

@@ -4,6 +4,7 @@
 // Klick öffnet nur diesen Eintrag, Häkchen oder Strg-Klick schaltet ihn dazu, Umschalt-Klick wählt einen Bereich.
 
 import { useRef, useState } from "react";
+import { useT } from "../I18nProvider";
 
 export interface TabItem {
   name: string;
@@ -29,6 +30,7 @@ export default function ItemTabs({ items, open, setOpen, label }: {
   /** z. B. „Rückmeldebäume“ – für Screenreader und Hinweise */
   label: string;
 }) {
+  const t = useT();
   const anchor = useRef<string | null>(null);
   const sorted = [...items].sort((a, b) => natural(a.name, b.name));
   const names = sorted.map((i) => i.name);
@@ -57,9 +59,9 @@ export default function ItemTabs({ items, open, setOpen, label }: {
           return (
             <div key={it.name} className={`prt-tab${on ? " on" : ""}`}>
               <input type="checkbox" className="prt-tab-check" checked={on} onChange={() => toggle(it.name)}
-                aria-label={`${it.name} zusätzlich öffnen`} title="Zusätzlich öffnen (Mehrfachauswahl)" />
+                aria-label={t("sections.tabs.openAlso", { name: it.name })} title={t("sections.tabs.openAlsoTitle")} />
               <button type="button" role="tab" aria-selected={on} className="prt-tab-btn" onClick={(e) => click(e, it.name)}
-                title={`${it.name} öffnen – Strg+Klick: dazunehmen, Umschalt+Klick: Bereich`}>
+                title={t("sections.tabs.openTitle", { name: it.name })}>
                 <span className="prt-tab-name">{it.name}</span>
                 <span className={`prt-tab-sub${it.warn ? " warn" : ""}`}>{it.sub}</span>
               </button>
@@ -68,8 +70,8 @@ export default function ItemTabs({ items, open, setOpen, label }: {
         })}
       </div>
       <div className="prt-tabs-actions">
-        <span className="prt-tabs-count">{open.length} von {names.length} geöffnet</span>
-        <button type="button" className="btn small" onClick={() => setOpen(all ? [names[0]] : names)}>{all ? "Auswahl zurücksetzen" : "Alle öffnen"}</button>
+        <span className="prt-tabs-count">{t("sections.tabs.openCount", { open: open.length, total: names.length })}</span>
+        <button type="button" className="btn small" onClick={() => setOpen(all ? [names[0]] : names)}>{t(all ? "sections.tabs.resetSelection" : "sections.tabs.openAll")}</button>
       </div>
     </div>
   );

@@ -9,25 +9,14 @@ import { IconDown, IconPlus, IconTrash, IconUp, IconX } from "../icons";
 import { useDialogs } from "../Dialogs";
 import { Field, SectionHead, Select } from "./BasicSections";
 import ItemTabs, { useTabSelection } from "./ItemTabs";
+import type { MessageKey } from "@/lib/i18n";
+import { useT } from "../I18nProvider";
 
-export const INPUT_TYPES: [string, string, string][] = [
-  ["algebraic", "Algebraische Eingabe", "Standard für Terme, Gleichungen, Ungleichungen, Listen …"],
-  ["numerical", "Numerisch", "Nur Zahlen; mit Optionen wie floatnum, rationalnum"],
-  ["units", "Einheiten", "Zahl mit Einheit, z. B. 9.81*m/s^2"],
-  ["matrix", "Matrix", "Feste Größe, aus der Musterlösung übernommen"],
-  ["varmatrix", "Matrix (variabel)", "Größe wird von Studierenden festgelegt"],
-  ["dropdown", "Dropdown", "Musterlösung: [[wert, true/false, anzeige], …]"],
-  ["radio", "Radio-Buttons", "Einfachauswahl, Musterlösung wie Dropdown"],
-  ["checkbox", "Checkboxen", "Mehrfachauswahl, Musterlösung wie Dropdown"],
-  ["boolean", "Wahr/Falsch", "Auswahl true/false"],
-  ["singlechar", "Einzelnes Zeichen", "Ein Buchstabe"],
-  ["string", "Zeichenkette", "Freier Text, wird als String verglichen"],
-  ["textarea", "Textbereich", "Mehrere Zeilen, ergibt eine Liste"],
-  ["equiv", "Äquivalenzumformung", "Zeilenweise Umformungen"],
-  ["notes", "Notizen", "Wird nicht bewertet"],
-  ["geogebra", "GeoGebra", "Eingabe über GeoGebra-Applet"],
-  ["parsons", "Parsons (Beweise)", "Sortieraufgabe"],
-];
+/** Eingabetypen: [Typ, Schlüssel der Bezeichnung, Schlüssel der Beschreibung] */
+export const INPUT_TYPES: [string, MessageKey, MessageKey][] = ([
+  "algebraic", "numerical", "units", "matrix", "varmatrix", "dropdown", "radio", "checkbox",
+  "boolean", "singlechar", "string", "textarea", "equiv", "notes", "geogebra", "parsons",
+] as const).map((type) => [type, `sections.inputs.types.${type}.label`, `sections.inputs.types.${type}.desc`]);
 
 /** Benennt eine Eingabe um und passt alle Verweise an. */
 function renameInput(q: StackQuestion, from: string, to: string) {
@@ -53,27 +42,33 @@ function nextName(prefix: string, existing: string[]) {
 }
 
 function NameField({ name, onRename, taken }: { name: string; onRename: (n: string) => void; taken: string[] }) {
+  const t = useT();
   const [draft, setDraft] = useState(name);
   const [err, setErr] = useState("");
   const commit = () => {
     const n = draft.trim();
     if (n === name) return setErr("");
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(n)) return setErr("Nur Buchstaben, Ziffern, _ (Beginn mit Buchstabe)");
-    if (taken.includes(n)) return setErr("Name bereits vergeben");
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(n)) return setErr(t("sections.inputs.nameInvalid"));
+    if (taken.includes(n)) return setErr(t("sections.inputs.nameTaken"));
     setErr("");
     onRename(n);
   };
   return (
     <div>
       <input className="inp mono" style={{ width: 130 }} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && commit()} title="Umbenennen passt Fragetext, PRTs und Tests an" />
+        onKeyDown={(e) => e.key === "Enter" && commit()} title={t("sections.inputs.renameTitle")} />
       {err && <div className="hint" style={{ color: "var(--err)", fontSize: 12 }}>{err}</div>}
     </div>
   );
 }
 
 export default function InputsSection({ q, update, build }: SectionProps) {
+  const t = useT();
   const dialogs = useDialogs();
+  const typeLabel = (type: string) => {
+    const it = INPUT_TYPES.find((x) => x[0] === type);
+    return it ? t(it[1]) : type;
+  };
   const names = q.inputs.map((i) => i.fields.name);
   const [open, setOpen] = useTabSelection(names);
 
@@ -89,7 +84,7 @@ export default function InputsSection({ q, update, build }: SectionProps) {
         x.texts.questiontext.text += `\n<p>[[feedback:${prt}]]</p>`;
         if (!new RegExp(`(^|[^\\w])${taName}\\s*:`).test(x.questionvariables)) {
           const sep = !x.questionvariables || x.questionvariables.endsWith("\n") ? "" : "\n";
-          x.questionvariables += `${sep}${taName}: 0; /* Musterlösung für ${name} */\n`;
+          x.questionvariables += `${sep}${taName}: 0; /* Musterlösung für ${name} */\n`; // Inhalt (ins XML), nicht übersetzen
         }
       }
     });
@@ -98,16 +93,16 @@ export default function InputsSection({ q, update, build }: SectionProps) {
 
   return (
     <div className="section">
-      <SectionHead title="Eingaben" desc="Antwortfelder der Studierenden. Platzhalter im Fragetext: [[input:name]] und [[validation:name]].">
-        <button className="btn" onClick={() => add(false)}><IconPlus /> Eingabe</button>
-        <button className="btn primary" onClick={() => add(true)}><IconPlus /> Eingabe + PRT</button>
+      <SectionHead title={t("editor.nav.inputs")} desc={t("sections.inputs.desc")}>
+        <button className="btn" onClick={() => add(false)}><IconPlus /> {t("sections.inputs.add")}</button>
+        <button className="btn primary" onClick={() => add(true)}><IconPlus /> {t("sections.inputs.addWithPrt")}</button>
       </SectionHead>
-      {q.inputs.length === 0 && <div className="empty">Keine Eingaben vorhanden.</div>}
+      {q.inputs.length === 0 && <div className="empty">{t("sections.inputs.empty")}</div>}
       {q.inputs.length > 0 && (
-        <ItemTabs label="Eingaben" open={open} setOpen={setOpen}
+        <ItemTabs label={t("editor.nav.inputs")} open={open} setOpen={setOpen}
           items={q.inputs.map((i) => ({
             name: i.fields.name,
-            sub: INPUT_TYPES.find((t) => t[0] === i.fields.type)?.[1] ?? i.fields.type,
+            sub: typeLabel(i.fields.type),
             warn: !!build?.inputs[i.fields.name]?.tansError,
           }))} />
       )}
@@ -121,7 +116,8 @@ export default function InputsSection({ q, update, build }: SectionProps) {
             <input type="checkbox" checked={f[k] === "1"} onChange={(e) => set(k, e.target.checked ? "1" : "0")} /> {label}
           </label>
         );
-        const typeDesc = INPUT_TYPES.find((t) => t[0] === f.type)?.[2];
+        const typeDescKey = INPUT_TYPES.find((x) => x[0] === f.type)?.[2];
+        const typeDesc = typeDescKey ? t(typeDescKey) : undefined;
         const isChoice = ["dropdown", "radio", "checkbox"].includes(f.type);
         return (
           <div className="card prt-card" key={f.name}>
@@ -131,65 +127,65 @@ export default function InputsSection({ q, update, build }: SectionProps) {
                   update((x) => { renameInput(x, f.name, n); x.inputs[idx].fields.name = n; });
                   setOpen(open.map((o) => (o === f.name ? n : o)));
                 }} />
-              <span className="chip">{INPUT_TYPES.find((t) => t[0] === f.type)?.[1] ?? f.type}</span>
-              {info?.tansError && <span className="chip err" title={info.tansError}>Fehler in Musterlösung</span>}
+              <span className="chip">{typeLabel(f.type)}</span>
+              {info?.tansError && <span className="chip err" title={info.tansError}>{t("sections.inputs.tansError")}</span>}
               <div className="right">
                 {open.length > 1 && (
-                  <button className="btn small ghost" title="Diese Eingabe schließen" aria-label={`${f.name} schließen`}
+                  <button className="btn small ghost" title={t("sections.inputs.close")} aria-label={t("sections.closeNamed", { name: f.name })}
                     onClick={() => setOpen(open.filter((o) => o !== f.name))}><IconX /></button>
                 )}
-                <button className="btn small ghost" disabled={idx === 0} title="Nach oben" onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx - 1, 0, it); })}><IconUp /></button>
-                <button className="btn small ghost" disabled={idx === q.inputs.length - 1} title="Nach unten" onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx + 1, 0, it); })}><IconDown /></button>
-                <button className="btn small danger" title="Eingabe löschen" onClick={async () => {
-                  const ok = await dialogs.confirm({ title: "Eingabe löschen?", message: `Eingabe ${f.name} löschen? Platzhalter im Fragetext bleiben bestehen.`, confirmLabel: "Löschen", danger: true });
+                <button className="btn small ghost" disabled={idx === 0} title={t("sections.moveUp")} onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx - 1, 0, it); })}><IconUp /></button>
+                <button className="btn small ghost" disabled={idx === q.inputs.length - 1} title={t("sections.moveDown")} onClick={() => update((x) => { const [it] = x.inputs.splice(idx, 1); x.inputs.splice(idx + 1, 0, it); })}><IconDown /></button>
+                <button className="btn small danger" title={t("sections.inputs.delete")} onClick={async () => {
+                  const ok = await dialogs.confirm({ title: t("sections.inputs.deleteTitle"), message: t("sections.inputs.deleteMessage", { name: f.name }), confirmLabel: t("common.delete"), danger: true });
                   if (ok) update((x) => { const i = x.inputs.findIndex((it) => it.fields.name === f.name); if (i >= 0) x.inputs.splice(i, 1); });
                 }}><IconTrash /></button>
               </div>
             </div>
             <div className="card-body">
               <div className="grid2">
-                <Field label="Eingabetyp" hint={typeDesc}>
-                  <Select value={f.type} onChange={(v) => set("type", v)} options={INPUT_TYPES.map(([v, l]) => [v, l])} />
+                <Field label={t("sections.inputs.type")} hint={typeDesc}>
+                  <Select value={f.type} onChange={(v) => set("type", v)} options={INPUT_TYPES.map(([v, l]) => [v, t(l)])} />
                 </Field>
-                <Field label="Feldbreite">
+                <Field label={t("sections.inputs.boxSize")}>
                   <input className="inp" type="number" min="1" value={f.boxsize} onChange={(e) => set("boxsize", e.target.value)} />
                 </Field>
               </div>
-              <Field label="Musterlösung (tans)" hint={isChoice ? "Liste [[wert, true/false, anzeige], …]" : "Maxima-Ausdruck, z. B. ta1"}>
+              <Field label={t("sections.inputs.tans")} hint={t(isChoice ? "sections.inputs.tansHintChoice" : "sections.inputs.tansHint")}>
                 <MaximaEditor mode="expr" value={f.tans} onChange={(v) => set("tans", v)} placeholder="ta1" />
                 {info?.tans && (
                   <div className="hint mono" style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 3 }}>
-                    aktuelle Variante: {toMaxima(info.tans).slice(0, 300)}
+                    {t("sections.inputs.currentVariant", { value: toMaxima(info.tans).slice(0, 300) })}
                   </div>
                 )}
                 {info?.tansError && <div className="issue error" style={{ marginTop: 6 }}>{info.tansError}</div>}
               </Field>
               <div className="grid3">
-                <Field label="Validierung anzeigen">
+                <Field label={t("sections.inputs.showValidation")}>
                   <Select value={f.showvalidation} onChange={(v) => set("showvalidation", v)}
-                    options={[["1", "Ja, mit Variablenliste"], ["2", "Ja, ohne Variablenliste"], ["3", "Ja, kompakt"], ["0", "Nein"]]} />
+                    options={[["1", t("sections.inputs.validationWithVars")], ["2", t("sections.inputs.validationNoVars")], ["3", t("sections.inputs.validationCompact")], ["0", t("common.no")]]} />
                 </Field>
-                <Field label="Sterne einfügen" hint="implizite Multiplikation">
+                <Field label={t("sections.inputs.insertStars")} hint={t("sections.inputs.insertStarsHint")}>
                   <Select value={f.insertstars} onChange={(v) => set("insertstars", v)}
-                    options={[["0", "Nein"], ["1", "Implizite Multiplikation"], ["2", "Leerzeichen = Mal"], ["3", "Beides"], ["4", "Einbuchst. Variablen"], ["5", "Einbuchst. + Leerzeichen"]]} />
+                    options={[["0", t("common.no")], ["1", t("sections.inputs.starsImplicit")], ["2", t("sections.inputs.starsSpaces")], ["3", t("sections.inputs.starsBoth")], ["4", t("sections.inputs.starsSingleChar")], ["5", t("sections.inputs.starsSingleCharSpaces")]]} />
                 </Field>
-                <Field label="Syntaxhinweis als">
-                  <Select value={f.syntaxattribute} onChange={(v) => set("syntaxattribute", v)} options={[["0", "Wert"], ["1", "Platzhalter"]]} />
+                <Field label={t("sections.inputs.syntaxAttribute")}>
+                  <Select value={f.syntaxattribute} onChange={(v) => set("syntaxattribute", v)} options={[["0", t("sections.inputs.syntaxValue")], ["1", t("sections.inputs.syntaxPlaceholder")]]} />
                 </Field>
               </div>
               <div className="grid3">
-                <Field label="Syntaxhinweis"><input className="inp mono" value={f.syntaxhint} onChange={(e) => set("syntaxhint", e.target.value)} /></Field>
-                <Field label="Verbotene Wörter" hint="kommagetrennt"><input className="inp mono" value={f.forbidwords} onChange={(e) => set("forbidwords", e.target.value)} /></Field>
-                <Field label="Erlaubte Wörter"><input className="inp mono" value={f.allowwords} onChange={(e) => set("allowwords", e.target.value)} /></Field>
+                <Field label={t("sections.inputs.syntaxHint")}><input className="inp mono" value={f.syntaxhint} onChange={(e) => set("syntaxhint", e.target.value)} /></Field>
+                <Field label={t("sections.inputs.forbidWords")} hint={t("sections.inputs.commaSeparated")}><input className="inp mono" value={f.forbidwords} onChange={(e) => set("forbidwords", e.target.value)} /></Field>
+                <Field label={t("sections.inputs.allowWords")}><input className="inp mono" value={f.allowwords} onChange={(e) => set("allowwords", e.target.value)} /></Field>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", marginBottom: 10 }}>
-                {flag("forbidfloat", "Gleitkommazahlen verbieten")}
-                {flag("requirelowestterms", "Vollständig gekürzt")}
-                {flag("checkanswertype", "Antworttyp prüfen", "Typ muss zur Musterlösung passen (z. B. Gleichung)")}
-                {flag("mustverify", "Zweistufige Validierung")}
-                {flag("strictsyntax", "Strikte Syntax")}
+                {flag("forbidfloat", t("sections.inputs.forbidFloat"))}
+                {flag("requirelowestterms", t("sections.inputs.lowestTerms"))}
+                {flag("checkanswertype", t("sections.inputs.checkType"), t("sections.inputs.checkTypeTitle"))}
+                {flag("mustverify", t("sections.inputs.mustVerify"))}
+                {flag("strictsyntax", t("sections.inputs.strictSyntax"))}
               </div>
-              <Field label="Zusatzoptionen" hint="z. B. hideanswer, allowempty, nounits, floatnum">
+              <Field label={t("sections.inputs.extraOptions")} hint={t("sections.inputs.extraOptionsHint")}>
                 <input className="inp mono" value={f.options} onChange={(e) => set("options", e.target.value)} />
               </Field>
             </div>

@@ -6,7 +6,8 @@ import dialogs from "./dialogs.ts";
 import editor from "./editor.ts";
 import login from "./login.ts";
 import preview from "./preview.ts";
+import sections from "./sections.ts";
 import server from "./server.ts";
 import users from "./users.ts";
 
-export default { common, login, dashboard, users, dialogs, server, editor, preview };
+export default { common, login, dashboard, users, dialogs, server, editor, preview, sections };

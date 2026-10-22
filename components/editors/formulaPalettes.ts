@@ -107,7 +107,7 @@ export const PALETTES: PaletteGroup[] = [
       sym("Spalte", matrixLatex("pmatrix", 3, 1), "Spaltenvektor"),
       sym("Zeile", matrixLatex("pmatrix", 1, 3), "Zeilenvektor"),
       sym("v⃗", r`\vec{#0}`, "Vektorpfeil"),
-      sym("‖v‖", r`\|#0\|`, "Norm"),
+      sym("‖v‖", r`\left\|#0\right\|`, "Norm"),
       sym("·", r`\cdot`, "Skalarprodukt"),
       sym("×", r`\times`, "Kreuzprodukt"),
       sym("Aᵀ", r`^{T}`, "Transponiert"),

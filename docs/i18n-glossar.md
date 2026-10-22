@@ -17,7 +17,7 @@ Deutsch ist die Quelle. Neue Fachbegriffe zuerst hier eintragen, dann übersetze
 | Antworttest | Answer test | Test de réponse | Prueba de respuesta | Test di risposta | Test odpovede |
 | Antwortnotiz | Answer note | Note de réponse | Nota de respuesta | Nota della risposta | Poznámka k odpovedi |
 | Eingabe (Input) | Input | Champ de réponse | Campo de respuesta | Campo di risposta | Vstupné pole |
-| Eingabetyp | Input type | Type de champ | Tipo de campo | Tipo di campo | Typ vstupu |
+| Eingabetyp | Input type | Type de champ | Tipo de campo | Tipo di campo | Typ vstupného poľa |
 | Schülerantwort | Student's answer | Réponse de l'étudiant | Respuesta del estudiante | Risposta dello studente | Odpoveď študenta |
 | Lehrerantwort | Teacher's answer | Réponse de l'enseignant | Respuesta del profesor | Risposta del docente | Odpoveď učiteľa |
 | Validierung | Validation | Validation | Validación | Validazione | Validácia |
@@ -54,4 +54,5 @@ Maxima-/LaTeX-Code, XML-Tags, Platzhalter `{name}`.
 - **Español:** Infinitiv für Knöpfe („Guardar“); „usted“-neutral formulieren.
 - **Italiano:** Imperativ (2. Person Singular) für Knöpfe wie in Moodle („Salva“, „Annulla“).
 - **Slovenčina:** Infinitiv für Knöpfe („Uložiť“); Mehrzahl mit drei Formen (1 / 2–4 / 5+) als `{ one, few, other }`.
-- Auslassungspunkte als „…“ mit vorangestelltem Leerzeichen wie im Deutschen („Lädt …“).
+- Auslassungspunkte „…“: nur im Deutschen mit vorangestelltem Leerzeichen („Lädt …“); in en/fr/es/it/sk
+  direkt am Wort („Loading…“, „Chargement…“, „Cargando…“, „Caricamento…“, „Načítava sa…“).

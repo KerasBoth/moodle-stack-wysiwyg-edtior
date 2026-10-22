@@ -8,7 +8,7 @@ export default {
   delete: "Supprimer",
   ok: "OK",
   error: "Erreur",
-  loading: "Chargement …",
+  loading: "Chargement…",
   yes: "Oui",
   no: "Non",
   back: "Retour",

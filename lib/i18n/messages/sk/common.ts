@@ -8,7 +8,7 @@ export default {
   delete: "Odstrániť",
   ok: "OK",
   error: "Chyba",
-  loading: "Načítava sa …",
+  loading: "Načítava sa…",
   yes: "Áno",
   no: "Nie",
   back: "Späť",

@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  LOCALES, LocalizedError, type Locale, formatDate, formatDateTime, negotiateLocale, parseLocale, translate,
+  LOCALES, LocalizedError, type Locale, formatDate, formatDateTime, negotiateLocale, parseLocale, translateWith,
 } from "../lib/i18n/index.ts";
-import { translateWith } from "../lib/i18n/translate.ts";
+import { translate } from "../lib/i18n/translate.ts";
 import { MESSAGES } from "../lib/i18n/messages/index.ts";
 
 test("negotiateLocale: Cookie vor Accept-Language, sonst Deutsch", () => {
@@ -49,6 +50,12 @@ test("Parität: gleiche Schlüssel, keine leeren Texte, gleiche Platzhalter", ()
       for (const [path, value] of got) {
         const refLeaf = ref.get(path)!;
         const refText = typeof refLeaf === "string" ? refLeaf : refLeaf.other;
+        if (typeof refLeaf !== "string") {
+          // Plural in de → auch hier Plural mit allen Formen, die die Sprache braucht („many“ fällt auf „other“ zurück)
+          assert.ok(typeof value !== "string", `${locale}: ${path} muss Plural sein`);
+          const needed = new Intl.PluralRules(locale).resolvedOptions().pluralCategories.filter((c) => c !== "many");
+          for (const c of needed) assert.ok(c in value, `${locale}: ${path} fehlt Pluralform ${c}`);
+        }
         const forms = typeof value === "string" ? { text: value } : value;
         for (const [form, text] of Object.entries(forms)) {
           assert.ok(text.trim() !== "", `${locale}: ${path} (${form}) ist leer`);
@@ -57,6 +64,36 @@ test("Parität: gleiche Schlüssel, keine leeren Texte, gleiche Platzhalter", ()
       }
     }
   }
+});
+
+// Ein Objekt mit „other“ gilt als Plural-Blatt; es darf dann nur Pluralformen enthalten,
+// sonst verschwänden Unterschlüssel stillschweigend.
+test("Plural-Blätter enthalten nur Pluralformen", () => {
+  const allowed = new Set(["zero", "one", "two", "few", "many", "other"]);
+  const walk = (obj: unknown, path: string) => {
+    if (typeof obj !== "object" || obj === null) return;
+    if ("other" in obj) {
+      for (const k of Object.keys(obj)) assert.ok(allowed.has(k), `${path}: „${k}“ ist keine Pluralform`);
+      for (const v of Object.values(obj)) assert.equal(typeof v, "string", `${path}: Pluralform ist kein Text`);
+      return;
+    }
+    for (const [k, v] of Object.entries(obj)) walk(v, `${path}.${k}`);
+  };
+  for (const locale of LOCALES) walk(MESSAGES[locale], locale);
+});
+
+test("Bündel: Client-Einstieg zieht keine Fremdsprachen", () => {
+  for (const file of ["index.ts", "core.ts"]) {
+    const src = readFileSync(new URL(`../lib/i18n/${file}`, import.meta.url), "utf8");
+    const imports = [...src.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(imports.filter((i) => i.includes("messages") && i !== "./messages/de/index.ts"), [], file);
+    assert.ok(!imports.includes("./translate.ts"), file);
+  }
+});
+
+test("Rückfall: fehlende Sprache → Deutsch", () => {
+  assert.equal(translateWith({ de: MESSAGES.de }, "sk", "common.save"), "Speichern");
+  assert.equal(translateWith({ de: MESSAGES.de, sk: MESSAGES.sk }, "sk", "common.items", { count: 3 }), "3 položky");
 });
 
 test("Rückfall: leerer Text → Deutsch, unbekannter Schlüssel → Schlüssel", () => {
@@ -94,6 +131,10 @@ test("Datumsformat je Sprache", () => {
   assert.ok(!formatDate("en", "2026-10-22T10:00:00Z").includes("22.10.2026"));
   assert.ok(formatDateTime("de", Date.parse("2026-10-22T10:00:00Z")).includes("22.10.2026"));
   for (const l of LOCALES as readonly Locale[]) assert.ok(formatDate(l, new Date()).length > 0);
+  // Feste Zeitzone (Vorgabe Europe/Berlin), unabhängig von der Zeitzone des Rechners
+  assert.ok(formatDate("de", "2026-10-22T23:30:00Z").includes("23.10.2026"));
+  assert.ok(formatDate("de", "2026-10-22T23:30:00Z", "UTC").includes("22.10.2026"));
+  assert.ok(formatDateTime("de", "2026-10-22T10:00:00Z").includes("12:00"));
 });
 
 test("LocalizedError: deutsche Meldung, Schlüssel und Status", () => {

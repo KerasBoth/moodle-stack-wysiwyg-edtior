@@ -8,7 +8,7 @@ export default {
   delete: "Delete",
   ok: "OK",
   error: "Error",
-  loading: "Loading …",
+  loading: "Loading…",
   yes: "Yes",
   no: "No",
   back: "Back",

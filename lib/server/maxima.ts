@@ -3,6 +3,7 @@
 //   MAXIMA_TIMEOUT=10000                (Millisekunden, optional)
 //   MAXIMA_VERSION=2024012900           (STACK-Version für den Server, optional)
 
+import { LocalizedError, type MessageKey, type Params } from "../i18n/index.ts";
 import { type CasRequest, type CasResult, buildProgram, parseOutput } from "../stack/maximaprogram.ts";
 
 export interface MaximaConfig { url: string; timeout: number; version: string }
@@ -14,7 +15,13 @@ export function maximaConfig(): MaximaConfig | null {
   return { url, timeout: Math.min(Math.max(timeout, 1000), 60000), version: process.env.MAXIMA_VERSION?.trim() || "2024012900" };
 }
 
-export class MaximaUnavailable extends Error {}
+// Status 503; die Meldung (server.maxima*) übersetzt die API in die Sprache des Anfragenden.
+export class MaximaUnavailable extends LocalizedError {
+  constructor(key: MessageKey, params?: Params) {
+    super(key, params, 503);
+    this.name = "MaximaUnavailable";
+  }
+}
 
 async function post(cfg: MaximaConfig, input: string): Promise<string> {
   const body = new URLSearchParams({ input, timeout: String(cfg.timeout), ploturlbase: "!ploturl!", version: cfg.version });
@@ -22,18 +29,22 @@ async function post(cfg: MaximaConfig, input: string): Promise<string> {
   try {
     res = await fetch(cfg.url, { method: "POST", body, signal: AbortSignal.timeout(cfg.timeout + 5000), cache: "no-store" });
   } catch (e) {
-    const reason = e instanceof Error && e.name === "TimeoutError" ? "Zeitüberschreitung" : e instanceof Error ? e.message : String(e);
-    throw new MaximaUnavailable(`Maxima-Server nicht erreichbar (${reason})`);
+    if (e instanceof Error && e.name === "TimeoutError") throw new MaximaUnavailable("server.maximaTimeout");
+    throw new MaximaUnavailable("server.maximaUnreachable", { reason: e instanceof Error ? e.message : String(e) });
   }
   const text = await res.text();
   // goemaxima meldet Zeitüberschreitungen und Abstürze mit Status ≠ 200
-  if (!res.ok) throw new MaximaUnavailable(`Maxima-Server antwortet mit ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+  if (!res.ok) {
+    throw text
+      ? new MaximaUnavailable("server.maximaStatusText", { status: res.status, text: text.slice(0, 200) })
+      : new MaximaUnavailable("server.maximaStatus", { status: res.status });
+  }
   return text;
 }
 
 export async function evaluateOnServer(req: CasRequest): Promise<CasResult> {
   const cfg = maximaConfig();
-  if (!cfg) throw new MaximaUnavailable("Kein Maxima-Server eingerichtet (MAXIMA_URL)");
+  if (!cfg) throw new MaximaUnavailable("server.maximaNotConfigured");
   return parseOutput(await post(cfg, buildProgram(req)), req);
 }
 

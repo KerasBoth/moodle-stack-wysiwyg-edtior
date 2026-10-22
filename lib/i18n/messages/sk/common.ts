@@ -8,6 +8,7 @@ export default {
   delete: "Odstrániť",
   ok: "OK",
   error: "Chyba",
+  httpError: "Chyba {status}",
   loading: "Načítava sa…",
   yes: "Áno",
   no: "Nie",

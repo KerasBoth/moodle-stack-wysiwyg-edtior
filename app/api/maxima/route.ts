@@ -1,7 +1,7 @@
 // Berechnungen über den Maxima-Server (nur für angemeldete Benutzer).
 
 import { NextResponse } from "next/server";
-import { MaximaUnavailable, evaluateOnServer, maximaStatus } from "@/lib/server/maxima";
+import { evaluateOnServer, maximaStatus } from "@/lib/server/maxima";
 import { apiError, apiUser, jsonBody } from "@/lib/server/session";
 import { StoreError } from "@/lib/server/store";
 import type { CasRequest } from "@/lib/stack/maximaprogram";
@@ -27,10 +27,10 @@ export async function POST(req: Request) {
       expressions: Array.isArray(body.expressions) ? body.expressions.map(String).slice(0, 300) : [],
     };
     const size = request.questionvariables.length + request.expressions!.join("").length;
-    if (size > 200_000) throw new StoreError("Zu viel Code für eine Berechnung");
+    if (size > 200_000) throw new StoreError("server.tooMuchCode");
     return NextResponse.json(await evaluateOnServer(request));
   } catch (e) {
-    if (e instanceof MaximaUnavailable) return NextResponse.json({ error: e.message }, { status: 503 });
+    // auch MaximaUnavailable (503) – übersetzt in die Sprache des Anfragenden
     return apiError(e);
   }
 }

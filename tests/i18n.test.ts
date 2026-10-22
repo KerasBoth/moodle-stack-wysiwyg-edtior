@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import {
   LOCALES, LocalizedError, type Locale, formatDate, formatDateTime, negotiateLocale, parseLocale, translateWith,
 } from "../lib/i18n/index.ts";
-import { translate } from "../lib/i18n/translate.ts";
+import { translate, translateMsg } from "../lib/i18n/translate.ts";
 import { MESSAGES } from "../lib/i18n/messages/index.ts";
+import { StoreError } from "../lib/server/store.ts";
 
 test("negotiateLocale: Cookie vor Accept-Language, sonst Deutsch", () => {
   assert.equal(negotiateLocale("fr", "de"), "fr");
@@ -148,4 +149,24 @@ test("LocalizedError: deutsche Meldung, Schlüssel und Status", () => {
 test("Bereiche eingebunden: login.title in allen Sprachen, de ≠ en", () => {
   for (const l of LOCALES) assert.notEqual(translate(l, "login.title"), "login.title", l);
   assert.notEqual(translate("de", "login.title"), translate("en", "login.title"));
+});
+
+test("Server-Meldung: Konflikt in der Sprache des Anfragenden, Datum erst beim Übersetzen formatiert", () => {
+  const en = translate("en", "server.conflictBy", { by: "Anna", date: "2026-10-22T10:00:00Z" });
+  assert.ok(en.includes("Anna"), en);
+  assert.ok(!en.includes("geändert"), en);
+  const msg = { key: "server.conflictBy", params: { by: "Anna", date: "2026-10-22T10:00:00Z" } } as const;
+  assert.ok(translateMsg("de", msg).includes("22.10.2026"), translateMsg("de", msg));
+  assert.ok(!translateMsg("en", msg).includes("22.10.2026"), translateMsg("en", msg));
+  assert.ok(!translateMsg("en", msg).includes("2026-10-22T"), translateMsg("en", msg));
+});
+
+test("StoreError: Schlüssel, deutsche .message, Status und Zusatzfelder", () => {
+  const e = new StoreError("server.fileExists", { name: "a.xml" }, 409, { exists: true });
+  assert.ok(e instanceof LocalizedError);
+  assert.equal(e.message, "a.xml existiert bereits");
+  assert.equal(e.status, 409);
+  assert.deepEqual(e.extra, { exists: true });
+  assert.equal(translate("fr", e.msg.key, e.msg.params), "a.xml existe déjà");
+  assert.equal(new StoreError("server.invalidRequest").status, 400);
 });

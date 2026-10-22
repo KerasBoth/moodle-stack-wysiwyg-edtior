@@ -1,6 +1,7 @@
 // Datenzugriff: Benutzer, Sitzungen, Kategorien, XML-Dateien. Alle Funktionen erhalten die DB explizit (testbar)
 // und laufen unverändert mit PostgreSQL und SQLite (siehe sql.ts).
 
+import { LocalizedError, type MessageKey, type Params } from "../i18n/index.ts";
 import { type Db, isUniqueViolation } from "./sql.ts";
 import { numberedName } from "../filename.ts";
 import { claimOrphans } from "./db.ts";
@@ -8,11 +9,13 @@ import { hashPassword, hashToken, newSessionToken, verifyPassword } from "./pass
 import { describeXml } from "./xmlmeta.ts";
 import { type Person, personLabel, personName } from "../people.ts";
 
-export class StoreError extends Error {
+// Meldung als Schlüssel unter server.*; die API übersetzt sie in die Sprache des Anfragenden, .message ist deutsch.
+export class StoreError extends LocalizedError {
   status: number;
   extra?: Record<string, unknown>;
-  constructor(message: string, status = 400, extra?: Record<string, unknown>) {
-    super(message);
+  constructor(key: MessageKey, params?: Params, status = 400, extra?: Record<string, unknown>) {
+    super(key, params, status);
+    this.name = "StoreError";
     this.status = status;
     this.extra = extra;
   }
@@ -40,7 +43,7 @@ function checkNames(firstName: string, lastName: string): [string, string] {
   firstName = firstName.trim();
   lastName = lastName.trim();
   if (firstName.length > MAX_NAME || lastName.length > MAX_NAME) {
-    throw new StoreError(`Vor- und Nachname dürfen höchstens ${MAX_NAME} Zeichen lang sein`, 400);
+    throw new StoreError("server.namesTooLong", { max: MAX_NAME }, 400);
   }
   return [firstName, lastName];
 }
@@ -76,14 +79,14 @@ export async function setUserNames(db: Db, userId: number, firstName: string | u
   if (lastName !== undefined) { params.push(last); sets.push(`last_name = $${params.length}`); }
   if (!sets.length) return;
   const row = await db.get<{ id: number }>(`UPDATE users SET ${sets.join(", ")} WHERE id = $1 RETURNING id`, params);
-  if (!row) throw new StoreError("Benutzer nicht gefunden", 404);
+  if (!row) throw new StoreError("server.userNotFound", undefined, 404);
 }
 
 function checkCredentials(username: string, password: string) {
   if (!/^[\w.@-]{2,50}$/.test(username)) {
-    throw new StoreError("Benutzername: 2–50 Zeichen, erlaubt sind Buchstaben, Ziffern und . _ @ -");
+    throw new StoreError("server.invalidUsername");
   }
-  if (password.length < 8) throw new StoreError("Das Passwort muss mindestens 8 Zeichen lang sein");
+  if (password.length < 8) throw new StoreError("server.passwordTooShort", { min: 8 });
 }
 
 export async function createUser(db: Db, username: string, password: string, isAdmin: boolean, names: { firstName?: string; lastName?: string } = {}): Promise<User> {
@@ -99,13 +102,13 @@ export async function createUser(db: Db, username: string, password: string, isA
     if (isAdmin) await claimOrphans(db, row!.id);
     return toUser(row!);
   } catch (e) {
-    if (isUniqueViolation(e)) throw new StoreError(`Benutzer „${username}“ existiert bereits`, 409);
+    if (isUniqueViolation(e)) throw new StoreError("server.userExists", { username }, 409);
     throw e;
   }
 }
 
 export async function setPassword(db: Db, userId: number, password: string) {
-  if (password.length < 8) throw new StoreError("Das Passwort muss mindestens 8 Zeichen lang sein");
+  if (password.length < 8) throw new StoreError("server.passwordTooShort", { min: 8 });
   await db.run("UPDATE users SET password_hash = $1 WHERE id = $2", [hashPassword(password), userId]);
 }
 
@@ -117,9 +120,9 @@ export async function checkPassword(db: Db, userId: number, password: string): P
 export async function deleteUser(db: Db, userId: number) {
   await db.tx(async (t) => {
     const target = await t.get<UserRow>("SELECT * FROM users WHERE id = $1", [userId]);
-    if (!target) throw new StoreError("Benutzer nicht gefunden", 404);
+    if (!target) throw new StoreError("server.userNotFound", undefined, 404);
     if (target.is_admin && (await count(t, "FROM users WHERE is_admin = 1")) <= 1) {
-      throw new StoreError("Der letzte Administrator kann nicht gelöscht werden");
+      throw new StoreError("server.lastAdmin");
     }
     await t.run("DELETE FROM users WHERE id = $1", [userId]);
   });
@@ -156,7 +159,7 @@ export interface Category { id: number; name: string; fileCount: number }
 
 function checkCategoryName(name: string) {
   name = name.trim();
-  if (!name || name.length > 80) throw new StoreError("Kategoriename: 1–80 Zeichen");
+  if (!name || name.length > 80) throw new StoreError("server.categoryNameLength", { max: 80 });
   return name;
 }
 
@@ -176,7 +179,7 @@ export async function createCategory(db: Db, name: string, userId: number): Prom
     const r = await db.get<{ id: number }>("INSERT INTO categories (name, created_by, owner_id, created_at) VALUES ($1, $2, $2, $3) RETURNING id", [name, userId, now()]);
     return { id: r!.id, name, fileCount: 0 };
   } catch (e) {
-    if (isUniqueViolation(e)) throw new StoreError(`Kategorie „${name}“ existiert bereits`, 409);
+    if (isUniqueViolation(e)) throw new StoreError("server.categoryExists", { name }, 409);
     throw e;
   }
 }
@@ -187,16 +190,16 @@ export async function renameCategory(db: Db, userId: number, id: number, name: s
   try {
     changes = (await db.run("UPDATE categories SET name = $1 WHERE id = $2 AND owner_id = $3", [name, id, userId])).changes;
   } catch (e) {
-    if (isUniqueViolation(e)) throw new StoreError(`Kategorie „${name}“ existiert bereits`, 409);
+    if (isUniqueViolation(e)) throw new StoreError("server.categoryExists", { name }, 409);
     throw e;
   }
-  if (!changes) throw new StoreError("Kategorie nicht gefunden", 404);
+  if (!changes) throw new StoreError("server.categoryNotFound", undefined, 404);
 }
 
 /** Löscht die Kategorie; enthaltene Dateien bleiben erhalten und sind danach ohne Kategorie. */
 export async function deleteCategory(db: Db, userId: number, id: number) {
   const r = await db.run("DELETE FROM categories WHERE id = $1 AND owner_id = $2", [id, userId]);
-  if (!r.changes) throw new StoreError("Kategorie nicht gefunden", 404);
+  if (!r.changes) throw new StoreError("server.categoryNotFound", undefined, 404);
 }
 
 // ---- Dateien ----------------------------------------------------------------------------------
@@ -254,7 +257,7 @@ const toFile = (r: FileRow): FileInfo => ({
 export function normalizeFileName(name: string): string {
   let n = name.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "").trim();
   if (!/\.xml$/i.test(n)) n += ".xml";
-  if (n.length < 5 || n.length > 200 || n.startsWith(".")) throw new StoreError("Ungültiger Dateiname");
+  if (n.length < 5 || n.length > 200 || n.startsWith(".")) throw new StoreError("server.invalidFileName");
   return n;
 }
 
@@ -290,7 +293,7 @@ export async function listFiles(
 
 export async function getFile(db: Db, userId: number, id: number): Promise<FileFull> {
   const r = await db.get<FileRow>(`SELECT ${FILE_COLS}, f.content ${FILE_FROM} WHERE f.id = $2 AND ${FILE_VISIBLE}`, [userId, id]);
-  if (!r) throw new StoreError("Datei nicht gefunden", 404);
+  if (!r) throw new StoreError("server.fileNotFound", undefined, 404);
   return { ...toFile(r), content: r.content! };
 }
 
@@ -308,13 +311,13 @@ async function fileRole(db: Db, userId: number, fileId: number): Promise<FileRol
 async function checkCategory(db: Db, ownerId: number, categoryId: number | null | undefined) {
   if (categoryId == null) return;
   if (!(await db.get("SELECT 1 AS ok FROM categories WHERE id = $1 AND owner_id = $2", [categoryId, ownerId]))) {
-    throw new StoreError("Kategorie nicht gefunden", 404);
+    throw new StoreError("server.categoryNotFound", undefined, 404);
   }
 }
 
 function questionsOf(content: string): string[] {
   const meta = describeXml(content);
-  if (!meta.ok) throw new StoreError(meta.error);
+  if (!meta.ok) throw new StoreError(meta.error.key, meta.error.params);
   return meta.questions;
 }
 
@@ -346,7 +349,7 @@ export async function createFile(
           existing = await taken(name);
         }
         if (existing) {
-          if (!input.overwrite) throw new StoreError(`${name} existiert bereits`, 409, { exists: true, id: existing.id });
+          if (!input.overwrite) throw new StoreError("server.fileExists", { name }, 409, { exists: true, id: existing.id });
           return updateFile(t, userId, existing.id, { content: input.content, categoryId: input.categoryId });
         }
         const ts = now();
@@ -361,7 +364,7 @@ export async function createFile(
       if (!isUniqueViolation(e)) throw e;
       if (autoRename && attempt < 5) continue;
       // gleichzeitig angelegt: wie „existiert bereits“ behandeln
-      throw new StoreError(`${name} existiert bereits`, 409, { exists: true });
+      throw new StoreError("server.fileExists", { name }, 409, { exists: true });
     }
   }
 }
@@ -382,19 +385,20 @@ export async function updateFile(
       `SELECT * FROM files WHERE id = $1${t.dialect === "postgres" ? " FOR UPDATE" : ""}`, [id],
     );
     const role = cur ? await fileRole(t, userId, id) : null;
-    if (!cur || !role) throw new StoreError("Datei nicht gefunden", 404);
-    if (role === "read") throw new StoreError("Nur Lesezugriff", 403);
+    if (!cur || !role) throw new StoreError("server.fileNotFound", undefined, 404);
+    if (role === "read") throw new StoreError("server.readOnly", undefined, 403);
     if (role === "edit" && (input.name !== undefined || input.categoryId !== undefined)) {
-      throw new StoreError("Name und Kategorie darf nur der Besitzer ändern", 403);
+      throw new StoreError("server.ownerOnlyNameCategory", undefined, 403);
     }
     if (input.content !== undefined && input.baseUpdatedAt && input.baseUpdatedAt !== cur.updated_at && !input.force) {
       const who = cur.updated_by == null ? null
         : await t.get<{ username: string; first_name: string; last_name: string }>("SELECT username, first_name, last_name FROM users WHERE id = $1", [cur.updated_by]);
       const by = who ? personName({ username: who.username, firstName: who.first_name, lastName: who.last_name }) : null;
-      throw new StoreError(
-        `Die Datei wurde inzwischen${by ? ` von ${by}` : ""} geändert (${new Date(cur.updated_at).toLocaleString("de-DE")})`,
-        409, { conflict: true },
-      );
+      // Zeitpunkt als ISO-Parameter: formatiert wird erst beim Übersetzen in der Sprache des Anfragenden
+      const date = new Date(cur.updated_at).toISOString();
+      throw by
+        ? new StoreError("server.conflictBy", { by, date }, 409, { conflict: true })
+        : new StoreError("server.conflict", { date }, 409, { conflict: true });
     }
     const sets: string[] = [];
     const args: unknown[] = [];
@@ -402,7 +406,7 @@ export async function updateFile(
     if (input.name !== undefined) {
       const name = normalizeFileName(input.name);
       const clash = await t.get("SELECT id FROM files WHERE owner_id = $1 AND lower(name) = lower($2) AND id <> $3", [cur.owner_id, name, id]);
-      if (clash) throw new StoreError(`${name} existiert bereits`, 409, { exists: true });
+      if (clash) throw new StoreError("server.fileExists", { name }, 409, { exists: true });
       set("name", name);
     }
     if (input.categoryId !== undefined) {
@@ -437,8 +441,8 @@ export async function updateFile(
 
 export async function deleteFile(db: Db, userId: number, id: number) {
   const role = await fileRole(db, userId, id);
-  if (!role) throw new StoreError("Datei nicht gefunden", 404);
-  if (role !== "owner") throw new StoreError("Nur der Besitzer kann die Datei löschen", 403);
+  if (!role) throw new StoreError("server.fileNotFound", undefined, 404);
+  if (role !== "owner") throw new StoreError("server.ownerOnlyDelete", undefined, 403);
   await db.run("DELETE FROM files WHERE id = $1 AND owner_id = $2", [id, userId]);
 }
 
@@ -450,8 +454,8 @@ export interface Share extends Person { role: ShareRole }
 /** Nur der Besitzer verwaltet Freigaben; wer die Datei nicht sehen darf, erfährt nicht von ihr (404). */
 async function requireOwner(db: Db, userId: number, fileId: number) {
   const role = await fileRole(db, userId, fileId);
-  if (!role) throw new StoreError("Datei nicht gefunden", 404);
-  if (role !== "owner") throw new StoreError("Nur der Besitzer kann Freigaben verwalten", 403);
+  if (!role) throw new StoreError("server.fileNotFound", undefined, 404);
+  if (role !== "owner") throw new StoreError("server.ownerOnlyShares", undefined, 403);
 }
 
 export async function listShares(db: Db, ownerId: number, fileId: number): Promise<Share[]> {
@@ -466,9 +470,9 @@ export async function listShares(db: Db, ownerId: number, fileId: number): Promi
 /** Gibt die Datei für einen Benutzer frei oder ändert dessen Stufe. */
 export async function setShare(db: Db, ownerId: number, fileId: number, targetUserId: number, role: ShareRole): Promise<void> {
   await requireOwner(db, ownerId, fileId);
-  if (role !== "read" && role !== "edit") throw new StoreError("Ungültige Freigabestufe", 400);
-  if (targetUserId === ownerId) throw new StoreError("Eine Datei kann nicht mit dem Besitzer geteilt werden", 400);
-  if (!(await db.get("SELECT id FROM users WHERE id = $1", [targetUserId]))) throw new StoreError("Benutzer nicht gefunden", 404);
+  if (role !== "read" && role !== "edit") throw new StoreError("server.invalidShareRole", undefined, 400);
+  if (targetUserId === ownerId) throw new StoreError("server.shareWithOwner", undefined, 400);
+  if (!(await db.get("SELECT id FROM users WHERE id = $1", [targetUserId]))) throw new StoreError("server.userNotFound", undefined, 404);
   await db.run(
     `INSERT INTO file_shares (file_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)
      ON CONFLICT (file_id, user_id) DO UPDATE SET role = excluded.role`,
@@ -479,7 +483,7 @@ export async function setShare(db: Db, ownerId: number, fileId: number, targetUs
 export async function removeShare(db: Db, ownerId: number, fileId: number, targetUserId: number): Promise<void> {
   await requireOwner(db, ownerId, fileId);
   const r = await db.run("DELETE FROM file_shares WHERE file_id = $1 AND user_id = $2", [fileId, targetUserId]);
-  if (!r.changes) throw new StoreError("Freigabe nicht gefunden", 404);
+  if (!r.changes) throw new StoreError("server.shareNotFound", undefined, 404);
 }
 
 // ---- Dashboard ------------------------------------------------------------------------------

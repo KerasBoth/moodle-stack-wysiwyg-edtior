@@ -1,6 +1,10 @@
 // Kleiner fetch-Wrapper für die JSON-API. Bei abgelaufener Sitzung geht es zurück zur Anmeldung.
 
-import { type Locale, type MessageKey, type Params, formatDate } from "../i18n/index.ts";
+import {
+  DEFAULT_LOCALE, type Locale, type MessageKey, type Params, formatDate, parseLocale, translateWith,
+} from "../i18n/index.ts";
+import { loadMessages } from "../i18n/loaders.ts";
+import de from "../i18n/messages/de/index.ts";
 
 export class ApiError extends Error {
   status: number;
@@ -22,8 +26,16 @@ export async function api<T = Record<string, unknown>>(url: string, opts: { meth
   if (r.status === 401 && !url.startsWith("/api/auth/")) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
   }
-  if (!r.ok) throw new ApiError(String(data.error ?? `Fehler ${r.status}`), r.status, data);
+  if (!r.ok) throw new ApiError(typeof data.error === "string" ? data.error : await httpErrorText(r.status), r.status, data);
   return data as T;
+}
+
+// Antwort ohne Meldung (z. B. Proxy-Fehlerseite): „Fehler 502“ in der Sprache der Seite (<html lang>,
+// vom Server gesetzt und beim Umschalten nachgeführt). Die Texte der Sprache hat der I18nProvider bereits geladen.
+async function httpErrorText(status: number): Promise<string> {
+  const locale = parseLocale(document.documentElement.lang) ?? DEFAULT_LOCALE;
+  const messages = await loadMessages(locale).catch(() => undefined);
+  return translateWith({ de, ...(messages && { [locale]: messages }) }, locale, "common.httpError", { status });
 }
 
 export async function logoutAndLeave() {

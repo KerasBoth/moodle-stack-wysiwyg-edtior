@@ -2,6 +2,8 @@
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { getLocale, getT } from "../i18n/server.ts";
+import { LocalizedError, translate, translateMsg } from "../i18n/translate.ts";
 import { getDb } from "./db.ts";
 import { StoreError, type User, userForToken } from "./store.ts";
 
@@ -18,8 +20,8 @@ export async function currentUser(): Promise<User | null> {
 /** Für API-Routen: angemeldeter Benutzer oder eine 401/403-Antwort. */
 export async function apiUser(opts: { admin?: boolean } = {}): Promise<User | NextResponse> {
   const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
-  if (opts.admin && !user.isAdmin) return NextResponse.json({ error: "Nur für Administratoren" }, { status: 403 });
+  if (!user) return NextResponse.json({ error: (await getT())("server.notSignedIn") }, { status: 401 });
+  if (opts.admin && !user.isAdmin) return NextResponse.json({ error: (await getT())("server.adminOnly") }, { status: 403 });
   return user;
 }
 
@@ -28,23 +30,33 @@ export function setSessionCookie(res: NextResponse, req: Request, token: string,
   res.cookies.set(SESSION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: https, path: "/", expires });
 }
 
-/** Einheitliche Fehlerantwort; StoreError trägt Status und Zusatzfelder. */
-export function apiError(e: unknown) {
-  if (e instanceof StoreError) return NextResponse.json({ error: e.message, ...e.extra }, { status: e.status });
+/**
+ * Einheitliche Fehlerantwort in der Sprache des Anfragenden (Cookie, sonst Accept-Language).
+ * LocalizedError (z. B. StoreError, MaximaUnavailable) trägt Schlüssel und Status, StoreError zusätzlich Zusatzfelder.
+ */
+export async function apiError(e: unknown): Promise<NextResponse> {
+  const locale = await getLocale();
+  if (e instanceof LocalizedError) {
+    const extra = e instanceof StoreError ? e.extra : undefined;
+    return NextResponse.json({ error: translateMsg(locale, e.msg), ...extra }, { status: e.status ?? 400 });
+  }
   console.error(e);
-  return NextResponse.json({ error: `Serverfehler: ${e instanceof Error ? e.message : String(e)}` }, { status: 500 });
+  return NextResponse.json(
+    { error: translate(locale, "server.serverError", { detail: e instanceof Error ? e.message : String(e) }) },
+    { status: 500 },
+  );
 }
 
 /** Liest einen JSON-Body; Formulare anderer Seiten (CSRF) werden so abgewiesen. */
 export async function jsonBody<T>(req: Request): Promise<Partial<T>> {
-  if (!req.headers.get("content-type")?.includes("application/json")) throw new StoreError("JSON erwartet", 415);
+  if (!req.headers.get("content-type")?.includes("application/json")) throw new StoreError("server.jsonExpected", undefined, 415);
   const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") throw new StoreError("Ungültige Anfrage");
+  if (!body || typeof body !== "object") throw new StoreError("server.invalidRequest");
   return body as Partial<T>;
 }
 
 export function idParam(raw: string): number {
   const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) throw new StoreError("Ungültige ID");
+  if (!Number.isInteger(id) || id <= 0) throw new StoreError("server.invalidId");
   return id;
 }

@@ -8,6 +8,7 @@ export default {
   delete: "Löschen",
   ok: "OK",
   error: "Fehler",
+  httpError: "Fehler {status}",
   loading: "Lädt …",
   yes: "Ja",
   no: "Nein",

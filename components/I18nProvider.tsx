@@ -11,19 +11,11 @@ import {
   DEFAULT_LOCALE, LOCALE_COOKIE, type Locale, type MessageKey, type Messages, type MessagesByLocale, type Msg,
   type Params, parseLocale, translateWith,
 } from "@/lib/i18n";
+import { loadMessages } from "@/lib/i18n/loaders";
 import de from "@/lib/i18n/messages/de";
 
 type T = (key: MessageKey | Msg, params?: Params) => string;
 type Ctx = { locale: Locale; t: T; setLocale: (l: Locale) => void };
-
-const LOADERS: Record<Locale, () => Promise<{ default: Messages }>> = {
-  de: () => import("@/lib/i18n/messages/de"),
-  en: () => import("@/lib/i18n/messages/en"),
-  fr: () => import("@/lib/i18n/messages/fr"),
-  es: () => import("@/lib/i18n/messages/es"),
-  it: () => import("@/lib/i18n/messages/it"),
-  sk: () => import("@/lib/i18n/messages/sk"),
-};
 
 function makeT(messages: MessagesByLocale, locale: Locale): T {
   return (key, params) =>
@@ -71,7 +63,7 @@ export function I18nProvider({ locale, messages, children }: { locale: Locale; m
     const n = ++seq.current;
     writeCookie(l);
     const known = stateRef.current.messages[l];
-    (known ? Promise.resolve(known) : LOADERS[l]().then((m) => m.default)).then(
+    (known ? Promise.resolve(known) : loadMessages(l)).then(
       (msgs) => {
         if (n !== seq.current) return; // inzwischen erneut umgeschaltet
         document.documentElement.lang = l;

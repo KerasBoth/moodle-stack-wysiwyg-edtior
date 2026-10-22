@@ -27,7 +27,7 @@ export async function PUT(req: Request, ctx: Ctx) {
     const db = await getDb();
     const fileId = idParam((await ctx.params).id);
     const targetId = Number(body.userId);
-    if (!Number.isInteger(targetId) || targetId <= 0) throw new StoreError("Ungültige Benutzer-ID");
+    if (!Number.isInteger(targetId) || targetId <= 0) throw new StoreError("server.invalidUserId");
     await setShare(db, user.id, fileId, targetId, body.role as "read" | "edit");
     return NextResponse.json({ shares: await listShares(db, user.id, fileId) });
   } catch (e) {

@@ -15,7 +15,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const id = idParam((await ctx.params).id);
     const hasPassword = typeof body.password === "string";
     const hasNames = typeof body.firstName === "string" || typeof body.lastName === "string";
-    if (!hasPassword && !hasNames) throw new StoreError("Nichts zu ändern");
+    if (!hasPassword && !hasNames) throw new StoreError("server.nothingToChange");
     if (hasPassword) await setPassword(db, id, body.password as string);
     if (hasNames) {
       await setUserNames(db, id, typeof body.firstName === "string" ? body.firstName : undefined, typeof body.lastName === "string" ? body.lastName : undefined);
@@ -31,7 +31,7 @@ export async function DELETE(_req: Request, ctx: Ctx) {
   if (user instanceof Response) return user;
   try {
     const id = idParam((await ctx.params).id);
-    if (id === user.id) throw new StoreError("Das eigene Konto kann nicht gelöscht werden");
+    if (id === user.id) throw new StoreError("server.cannotDeleteSelf");
     await deleteUser(await getDb(), id);
     return NextResponse.json({ ok: true });
   } catch (e) {

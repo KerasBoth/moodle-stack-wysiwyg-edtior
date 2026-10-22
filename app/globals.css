@@ -274,6 +274,11 @@ a.tbtn, a.btn, a.mi { text-decoration: none; color: inherit; }
 .auth-note { margin: -4px 0 14px; color: var(--ink-3); font-size: 13px; }
 .auth-submit { width: 100%; justify-content: center; height: 36px; margin-top: 4px; }
 .auth-card .issue { margin-bottom: 10px; }
+.auth-lang { position: fixed; top: 14px; right: 16px; }
+
+/* ---------- Sprachumschalter ---------- */
+.lang-switch { height: 30px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); cursor: pointer; }
+.topbar .lang-switch { flex-shrink: 0; border-color: #3a4742; background: var(--top-2); color: var(--top-ink); }
 
 /* ---------- Dashboard ---------- */
 .dash-scroll { overflow: auto; min-height: 0; }

@@ -1,5 +1,7 @@
 // Kleiner fetch-Wrapper für die JSON-API. Bei abgelaufener Sitzung geht es zurück zur Anmeldung.
 
+import { type Locale, type MessageKey, type Params, formatDate } from "../i18n/index.ts";
+
 export class ApiError extends Error {
   status: number;
   data: Record<string, unknown>;
@@ -29,14 +31,14 @@ export async function logoutAndLeave() {
   window.location.href = "/login";
 }
 
-/** „vor 5 Min.“, „gestern“ … für Listen. */
-export function relTime(iso: string): string {
+/** „vor 5 Min.“, „gestern“ … für Listen, in der Oberflächensprache. */
+export function relTime(iso: string, locale: Locale, t: (key: MessageKey, params?: Params) => string): string {
   const d = new Date(iso);
   const s = (Date.now() - d.getTime()) / 1000;
-  if (s < 60) return "gerade eben";
-  if (s < 3600) return `vor ${Math.floor(s / 60)} Min.`;
-  if (s < 86400) return `vor ${Math.floor(s / 3600)} Std.`;
-  if (s < 2 * 86400) return "gestern";
-  if (s < 7 * 86400) return `vor ${Math.floor(s / 86400)} Tagen`;
-  return d.toLocaleDateString("de-DE");
+  if (s < 60) return t("dashboard.justNow");
+  if (s < 3600) return t("dashboard.minutesAgo", { count: Math.floor(s / 60) });
+  if (s < 86400) return t("dashboard.hoursAgo", { count: Math.floor(s / 3600) });
+  if (s < 2 * 86400) return t("dashboard.yesterday");
+  if (s < 7 * 86400) return t("dashboard.daysAgo", { count: Math.floor(s / 86400) });
+  return formatDate(locale, d);
 }

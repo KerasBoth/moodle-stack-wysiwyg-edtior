@@ -6,15 +6,19 @@ import { useCallback, useEffect, useState } from "react";
 import type { FileInfo, Share, ShareRole } from "@/lib/server/store";
 import { personLabel, personName, type Person } from "@/lib/people";
 import { api } from "@/lib/client/api";
+import type { MessageKey } from "@/lib/i18n";
+import { useT } from "./I18nProvider";
 import { IconShare, IconTrash } from "./icons";
 import { Modal } from "./Modal";
 
-const ROLES: { value: ShareRole; label: string }[] = [
-  { value: "read", label: "Lesen" },
-  { value: "edit", label: "Bearbeiten" },
-];
+export const ROLE_LABELS: Record<ShareRole, MessageKey> = {
+  read: "dialogs.share.roleRead",
+  edit: "dialogs.share.roleEdit",
+};
+const ROLES: ShareRole[] = ["read", "edit"];
 
 export default function ShareDialog({ file, onClose, notify }: { file: FileInfo; onClose: () => void; notify: (msg: string, err?: boolean) => void }) {
+  const t = useT();
   const [people, setPeople] = useState<Person[]>([]);
   const [shares, setShares] = useState<Share[]>([]);
   const [userId, setUserId] = useState("");
@@ -48,7 +52,7 @@ export default function ShareDialog({ file, onClose, notify }: { file: FileInfo;
     const id = Number(userId);
     if (!id) return;
     const person = people.find((p) => p.id === id);
-    if (await put(id, role, person ? `Mit ${personName(person)} geteilt` : undefined)) setUserId("");
+    if (await put(id, role, person ? t("dialogs.share.sharedWithToast", { name: personName(person) }) : undefined)) setUserId("");
   };
   const remove = async (s: Share) => {
     setError(null);
@@ -61,47 +65,47 @@ export default function ShareDialog({ file, onClose, notify }: { file: FileInfo;
   };
 
   return (
-    <Modal title={`„${file.name}“ teilen`} onClose={onClose} wide>
+    <Modal title={t("dialogs.share.title", { name: file.name })} onClose={onClose} wide>
       <form onSubmit={add} className="user-add">
         <div className="grid3">
           <div className="field">
-            <label>Benutzer</label>
+            <label>{t("dialogs.share.user")}</label>
             <select className="inp" value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value="">Benutzer wählen …</option>
+              <option value="">{t("dialogs.share.chooseUser")}</option>
               {available.map((p) => <option key={p.id} value={p.id}>{personLabel(p)}</option>)}
             </select>
           </div>
           <div className="field">
-            <label>Berechtigung</label>
+            <label>{t("dialogs.share.permission")}</label>
             <select className="inp" value={role} onChange={(e) => setRole(e.target.value as ShareRole)}>
-              {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              {ROLES.map((r) => <option key={r} value={r}>{t(ROLE_LABELS[r])}</option>)}
             </select>
           </div>
-          <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={!userId}><IconShare /> Teilen</button></div>
+          <div className="field"><label>&nbsp;</label><button className="btn primary" disabled={!userId}><IconShare /> {t("dialogs.share.share")}</button></div>
         </div>
       </form>
       {error && <div className="issue error">{error}</div>}
       {shares.length ? (
         <table className="vt">
-          <thead><tr><th>Geteilt mit</th><th>Berechtigung</th><th /></tr></thead>
+          <thead><tr><th>{t("dialogs.share.sharedWith")}</th><th>{t("dialogs.share.permission")}</th><th /></tr></thead>
           <tbody>
             {shares.map((s) => (
               <tr key={s.id}>
                 <td><b>{personName(s)}</b> <span className="muted">{s.username}</span></td>
                 <td>
                   <select className="inp" value={s.role} onChange={(e) => put(s.id, e.target.value as ShareRole)}>
-                    {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    {ROLES.map((r) => <option key={r} value={r}>{t(ROLE_LABELS[r])}</option>)}
                   </select>
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  <button className="btn small danger" onClick={() => remove(s)} title="Freigabe entfernen"><IconTrash /></button>
+                  <button className="btn small danger" onClick={() => remove(s)} title={t("dialogs.share.removeShare")}><IconTrash /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <p className="muted">Noch mit niemandem geteilt.</p>
+        <p className="muted">{t("dialogs.share.notShared")}</p>
       )}
     </Modal>
   );

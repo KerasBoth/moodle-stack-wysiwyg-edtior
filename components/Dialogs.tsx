@@ -3,6 +3,7 @@
 // In-App-Dialoge (Ersatz für die Browser-Dialoge prompt, confirm und alert): confirm, prompt, form.
 
 import { createContext, useCallback, useContext, useId, useMemo, useRef, useState } from "react";
+import { useT } from "./I18nProvider";
 import { Modal, isModalOpen as modalOpen } from "./Modal";
 
 export interface ConfirmOptions { title: string; message: React.ReactNode; confirmLabel: string; danger?: boolean }
@@ -70,12 +71,13 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 }
 
 function ConfirmDialog({ opts, done }: { opts: ConfirmOptions; done: (v: boolean) => void }) {
+  const t = useT();
   return (
     <Modal title={opts.title} onClose={() => done(false)}>
       <form onSubmit={(e) => { e.preventDefault(); done(true); }}>
         <div className="field">{opts.message}</div>
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={() => done(false)}>Abbrechen</button>
+          <button type="button" className="btn" onClick={() => done(false)}>{t("common.cancel")}</button>
           <button type="submit" className={opts.danger ? "btn danger" : "btn primary"} autoFocus>{opts.confirmLabel}</button>
         </div>
       </form>
@@ -87,6 +89,7 @@ function FormDialog({ opts, done }: { opts: FormOptions; done: (v: Record<string
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(opts.fields.map((f) => [f.name, f.initial ?? ""])));
   const [error, setError] = useState<string | null>(null);
   const uid = useId();
+  const t = useT();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +119,7 @@ function FormDialog({ opts, done }: { opts: FormOptions; done: (v: Record<string
         ))}
         {error && <div className="issue error">{error}</div>}
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={() => done(null)}>Abbrechen</button>
+          <button type="button" className="btn" onClick={() => done(null)}>{t("common.cancel")}</button>
           <button type="submit" className="btn primary">{opts.confirmLabel}</button>
         </div>
       </form>

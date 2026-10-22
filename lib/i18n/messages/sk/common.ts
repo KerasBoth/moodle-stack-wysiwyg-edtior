@@ -15,5 +15,10 @@ export default {
   edit: "Upraviť",
   add: "Pridať",
   language: "Jazyk",
+  overwrite: "Prepísať",
+  uncategorized: "Bez kategórie",
+  appName: "STACK editor",
+  forMoodle: "pre Moodle",
+  appDescription: "Editor otázok STACK pre Moodle so živým náhľadom",
   items: { one: "{count} položka", few: "{count} položky", other: "{count} položiek" },
 } satisfies Messages["common"];

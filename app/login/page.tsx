@@ -1,10 +1,15 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Login from "@/components/Login";
+import { getT } from "@/lib/i18n/server";
 import { getDb } from "@/lib/server/db";
 import { currentUser } from "@/lib/server/session";
 import { countUsers } from "@/lib/server/store";
 
-export const metadata = { title: "Anmelden – STACK-Editor" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: `${t("login.title")} – ${t("common.appName")}` };
+}
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const { next } = await searchParams;

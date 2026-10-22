@@ -15,5 +15,10 @@ export default {
   edit: "Modifica",
   add: "Aggiungi",
   language: "Lingua",
+  overwrite: "Sovrascrivi",
+  uncategorized: "Senza categoria",
+  appName: "Editor STACK",
+  forMoodle: "per Moodle",
+  appDescription: "Editor di domande STACK per Moodle con anteprima in tempo reale",
   items: { one: "{count} elemento", other: "{count} elementi" },
 } satisfies Messages["common"];

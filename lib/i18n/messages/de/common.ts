@@ -15,5 +15,10 @@ export default {
   edit: "Bearbeiten",
   add: "Hinzufügen",
   language: "Sprache",
+  overwrite: "Überschreiben",
+  uncategorized: "Ohne Kategorie",
+  appName: "STACK-Editor",
+  forMoodle: "für Moodle",
+  appDescription: "Editor für Moodle-STACK-Aufgaben mit Live-Vorschau",
   items: { one: "{count} Element", other: "{count} Elemente" },
 };

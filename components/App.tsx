@@ -20,6 +20,9 @@ import InputsSection from "./sections/InputsSection";
 import PrtsSection from "./sections/PrtsSection";
 import TestsSection from "./sections/TestsSection";
 import UserMenu from "./UserMenu";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { useLocale } from "./I18nProvider";
+import { formatDate } from "@/lib/i18n";
 import SaveAsDialog from "./SaveAsDialog";
 import { isModalOpen, useDialogs } from "./Dialogs";
 import { fileNameFromTitle } from "@/lib/filename";
@@ -61,6 +64,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const [quiz, setQuiz] = useState<Quiz>(() => ({ items: [{ kind: "stack", q: newQuestion() }] }));
   const [sel, setSel] = useState(0);
   const dialogs = useDialogs();
+  const locale = useLocale();
   const [file, setFile] = useState<OpenFile | null>(null);
   const [saveAs, setSaveAs] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId);
@@ -591,7 +595,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                   {files.slice(0, 10).map((f) => (
                     <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)} title={`${f.name}${f.role !== "owner" ? ` (geteilt von ${f.ownerName})` : f.categoryName ? ` (${f.categoryName})` : ""}`}>
                       <span className="mi-file"><IconFile /><span className="mi-file-name">{f.questions[0] ?? f.name}</span></span>
-                      <small>{f.role !== "owner" ? `${f.ownerName} · ` : ""}{new Date(f.updatedAt).toLocaleDateString("de-DE")}</small>
+                      <small>{f.role !== "owner" ? `${f.ownerName} · ` : ""}{formatDate(locale, f.updatedAt)}</small>
                     </button>
                   ))}
                 </div>
@@ -616,6 +620,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         </div>
         <div className="spacer" />
         <button className="tbtn primary" disabled={readOnly || saving}onClick={() => saveToServer()} title={readOnly ? "Nur Lesezugriff" : "In der Datenbank speichern (Strg+S)"}><IconSave /> Speichern</button>
+        <LanguageSwitcher />
         <UserMenu user={user} notify={notify} />
       </header>
       {readOnly && <div className="readonly-band" role="status">Nur lesen – geteilt von {file?.ownerName}</div>}

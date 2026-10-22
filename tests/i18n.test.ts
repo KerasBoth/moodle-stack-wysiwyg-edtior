@@ -144,3 +144,8 @@ test("LocalizedError: deutsche Meldung, Schlüssel und Status", () => {
   assert.equal(e.status, 409);
   assert.ok(e instanceof Error);
 });
+
+test("Bereiche eingebunden: login.title in allen Sprachen, de ≠ en", () => {
+  for (const l of LOCALES) assert.notEqual(translate(l, "login.title"), "login.title", l);
+  assert.notEqual(translate("de", "login.title"), translate("en", "login.title"));
+});

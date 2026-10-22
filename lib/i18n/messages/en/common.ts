@@ -15,5 +15,10 @@ export default {
   edit: "Edit",
   add: "Add",
   language: "Language",
+  overwrite: "Overwrite",
+  uncategorized: "Uncategorised",
+  appName: "STACK Editor",
+  forMoodle: "for Moodle",
+  appDescription: "Editor for Moodle STACK questions with live preview",
   items: { one: "{count} item", other: "{count} items" },
 } satisfies Messages["common"];

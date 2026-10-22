@@ -646,7 +646,7 @@ a.tbtn, a.btn, a.mi { text-decoration: none; color: inherit; }
 .fe-gbtn:disabled { opacity: .45; cursor: default; }
 .fe-gbtn svg { width: 12px; height: 12px; opacity: .7; }
 .fe-gicon { min-width: 18px; font: 15px/1 "Cambria Math", "STIX Two Math", "Times New Roman", serif; color: var(--ink); }
-.fe-palette { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; display: grid; gap: 3px; padding: 6px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.18); }
+.fe-palette { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; width: max-content; display: grid; gap: 3px; padding: 6px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.18); }
 .fe-group:nth-last-child(-n+3) .fe-palette { left: auto; right: 0; }
 .fe-key { min-width: 38px; height: 34px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; font: 16px/1 "Cambria Math", "STIX Two Math", "Times New Roman", serif; white-space: nowrap; }
 .fe-key.cmd { font: 12px/1 var(--sans); color: var(--ink-2); }

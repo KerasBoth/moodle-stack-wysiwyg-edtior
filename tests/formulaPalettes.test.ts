@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PALETTES, matrixLatex } from "../components/editors/formulaPalettes.ts";
-import { casToMathLive } from "../lib/editor/formula.ts";
+import { DIFFERENTIAL_SHORTCUTS, PALETTES, matrixLatex } from "../components/editors/formulaPalettes.ts";
+import { casToMathLive, mathLiveToCas } from "../lib/editor/formula.ts";
 
 test("Gruppen in der Reihenfolge der Spec", () => {
   assert.deepEqual(PALETTES.map((g) => g.label), [
@@ -41,4 +41,13 @@ test("Maxima-Tasten ergeben ein darstellbares Kästchen", () => {
 test("Freie Matrizen: Umgebung als latex", () => {
   const free = PALETTES.flatMap((g) => g.keys).filter((k) => k.special === "matrix");
   assert.deepEqual(free.map((k) => k.latex), ["pmatrix", "bmatrix", "vmatrix"]);
+});
+
+test("Differential-Kürzel: dx & Co. mit halbem Abstand, nur hinter einem Integranden", () => {
+  assert.deepEqual(DIFFERENTIAL_SHORTCUTS.dx, { value: String.raw`\,dx`, after: "letter+digit+frac+surd+closefence+array" });
+  assert.equal(DIFFERENTIAL_SHORTCUTS.dt.value, String.raw`\,dt`);
+  for (const s of Object.values(DIFFERENTIAL_SHORTCUTS)) {
+    assert.doesNotMatch(s.after, /nothing|operator|openfence|relop|binop|space/);
+    assert.equal(mathLiveToCas(String.raw`\int x^2` + s.value), String.raw`\int x^2` + s.value);
+  }
 });

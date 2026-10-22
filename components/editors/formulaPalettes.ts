@@ -36,6 +36,15 @@ export function matrixLatex(env: string, rows: number, cols: number): string {
   return r`\begin{${env}}${lines.join(r`\\`)}\end{${env}}`;
 }
 
+/** Atome, nach denen getipptes „dx“ & Co. das Differential eines Integranden ist (MathLive-`after`-Kategorien).
+ *  Nicht nach Anfang/Operator/Klammer auf/Relation/Leerraum, damit z. B. „dy/dx“ und „\int dx“ unverändert bleiben. */
+const DIFFERENTIAL_AFTER = "letter+digit+frac+surd+closefence+array";
+
+/** Inline-Kürzel: „dx“, „dt“ … hinter einem Integranden werden zu `\,dx`, `\,dt` … (halber Abstand wie in der Palette). */
+export const DIFFERENTIAL_SHORTCUTS: Record<string, { value: string; after: string }> = Object.fromEntries(
+  ["x", "y", "z", "t", "u", "v", "r", "s"].map((v) => [`d${v}`, { value: r`\,d${v}`, after: DIFFERENTIAL_AFTER }]),
+);
+
 const GREEK_LOWER: [string, string][] = [
   ["α", "alpha"], ["β", "beta"], ["γ", "gamma"], ["δ", "delta"], ["ε", "varepsilon"], ["ϵ", "epsilon"], ["ζ", "zeta"],
   ["η", "eta"], ["θ", "theta"], ["ϑ", "vartheta"], ["ι", "iota"], ["κ", "kappa"], ["λ", "lambda"], ["μ", "mu"],

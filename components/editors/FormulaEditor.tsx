@@ -11,7 +11,7 @@ import { type Formula, type FormulaKind, casToMathLive, encodeExpr, mathLiveToCa
 import { useDialogs } from "../Dialogs";
 import { Modal } from "../Modal";
 import { IconCode, IconDown } from "../icons";
-import { PALETTES, type PaletteGroup, type PaletteKey, matrixLatex } from "./formulaPalettes";
+import { DIFFERENTIAL_SHORTCUTS, PALETTES, type PaletteGroup, type PaletteKey, matrixLatex } from "./formulaPalettes";
 
 /** Ergebnis von „Übernehmen“ (resolveApply ohne „undecodable“, das bleibt im Dialog). */
 export type FormulaApplyResult = { kind: "source"; source: string } | { kind: "empty" };
@@ -238,6 +238,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
       host.appendChild(mf);
       mf.menuItems = []; // kein Kontextmenü (es böte u. a. Schreibmaschinenschrift = Kästchen-Konstrukt)
       mf.keybindings = mf.keybindings.filter((kb) => !(kb.key === "[Escape]" && kb.ifMode !== "latex"));
+      mf.inlineShortcuts = { ...mf.inlineShortcuts, ...DIFFERENTIAL_SHORTCUTS };
       const ml = casToMathLive(codeRef.current);
       if (ml !== null) mf.setValue(ml, { silenceNotifications: true, mode: "math" });
       lastFieldLatex.current = mf.getValue("latex");

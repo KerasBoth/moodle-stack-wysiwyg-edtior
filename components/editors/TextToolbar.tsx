@@ -4,6 +4,7 @@
 // gruppierte Buttons, Einfüge-Menüs für Eingaben/Feedback mit Nutzungsstatus und eine Fußzeile.
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../I18nProvider";
 import { IconCheck, IconDown, IconInput, IconTree } from "../icons";
 
 /** Fügt STACK-Platzhalter (z. B. ["[[input:ans1]]", "[[validation:ans1]]"]) in den aktiven Editor ein. */
@@ -70,6 +71,7 @@ function usedSet(text: string, kind: "input" | "feedback"): Set<string> {
 
 /** Menüs „Eingabe“ und „Feedback“: zeigen, welche Platzhalter im Text schon vorkommen. */
 export function PlaceholderMenus({ info, text, insert }: { info: PlaceholderInfo; text: string; insert: InsertTokens }) {
+  const t = useT();
   const usedIn = usedSet(text + (info.otherText ?? ""), "input");
   const usedFb = usedSet(text + (info.otherText ?? ""), "feedback");
   const inputs = [...info.inputs].sort((a, b) => natural(a.name, b.name));
@@ -79,16 +81,16 @@ export function PlaceholderMenus({ info, text, insert }: { info: PlaceholderInfo
   return (
     <>
       {inputs.length > 0 && (
-        <TMenu label="Eingabe" icon={<IconInput />} badge={missIn > 0 && <span className="tcount" title={`${missIn} noch nicht im Text`}>{missIn}</span>}>
+        <TMenu label={t("editor.toolbar.input")} icon={<IconInput />} badge={missIn > 0 && <span className="tcount" title={t("editor.toolbar.notInText", { count: missIn })}>{missIn}</span>}>
           {(close) => (
             <>
-              <div className="tmenu-head">Eingabefeld mit Validierung einfügen</div>
+              <div className="tmenu-head">{t("editor.toolbar.insertInputHead")}</div>
               {inputs.map((i) => (
                 <button key={i.name} type="button" role="menuitem" className="tmenu-item" onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { insert([`[[input:${i.name}]]`, `[[validation:${i.name}]]`]); close(); }}>
                   <span className="tok tok-input">{i.name}</span>
                   <span className="tmenu-sub">{i.type}</span>
-                  {usedIn.has(i.name) ? <span className="state ok"><IconCheck /> verwendet</span> : <span className="state miss">fehlt</span>}
+                  {usedIn.has(i.name) ? <span className="state ok"><IconCheck /> {t("editor.toolbar.used")}</span> : <span className="state miss">{t("editor.toolbar.missing")}</span>}
                 </button>
               ))}
             </>
@@ -96,16 +98,16 @@ export function PlaceholderMenus({ info, text, insert }: { info: PlaceholderInfo
         </TMenu>
       )}
       {prts.length > 0 && (
-        <TMenu label="Feedback" icon={<IconTree />} badge={missFb > 0 && <span className="tcount" title={`${missFb} noch nicht im Text`}>{missFb}</span>}>
+        <TMenu label={t("editor.toolbar.feedback")} icon={<IconTree />} badge={missFb > 0 && <span className="tcount" title={t("editor.toolbar.notInText", { count: missFb })}>{missFb}</span>}>
           {(close) => (
             <>
-              <div className="tmenu-head">Rückmeldung eines PRT einfügen</div>
+              <div className="tmenu-head">{t("editor.toolbar.insertFeedbackHead")}</div>
               {prts.map((p) => (
                 <button key={p} type="button" role="menuitem" className="tmenu-item" onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { insert([`[[feedback:${p}]]`]); close(); }}>
                   <span className="tok tok-feedback">{p}</span>
                   <span className="tmenu-sub" />
-                  {usedFb.has(p) ? <span className="state ok"><IconCheck /> verwendet</span> : <span className="state miss">fehlt</span>}
+                  {usedFb.has(p) ? <span className="state ok"><IconCheck /> {t("editor.toolbar.used")}</span> : <span className="state miss">{t("editor.toolbar.missing")}</span>}
                 </button>
               ))}
             </>
@@ -118,6 +120,7 @@ export function PlaceholderMenus({ info, text, insert }: { info: PlaceholderInfo
 
 /** Fußzeile: Farblegende und Platzhalter, die im Text noch fehlen (per Klick einfügen). */
 export function EditorFooter({ info, text, insert, legend = true }: { info: PlaceholderInfo; text: string; insert: InsertTokens; legend?: boolean }) {
+  const t = useT();
   const usedIn = usedSet(text + (info.otherText ?? ""), "input");
   const usedFb = usedSet(text + (info.otherText ?? ""), "feedback");
   const missIn = info.inputs.map((i) => i.name).filter((n) => !usedIn.has(n)).sort(natural);
@@ -126,27 +129,27 @@ export function EditorFooter({ info, text, insert, legend = true }: { info: Plac
   return (
     <div className="tfoot">
       {legend && (
-        <div className="legend" aria-label="Farblegende">
-          <span><i className="sw sw-input" />Eingabe</span>
-          <span><i className="sw sw-feedback" />Feedback</span>
-          <span><i className="sw sw-expr" />CAS-Wert</span>
-          <span><i className="sw sw-math" />Formel</span>
-          <span><i className="sw sw-block" />Block</span>
+        <div className="legend" aria-label={t("editor.toolbar.legend")}>
+          <span><i className="sw sw-input" />{t("editor.toolbar.legendInput")}</span>
+          <span><i className="sw sw-feedback" />{t("editor.toolbar.legendFeedback")}</span>
+          <span><i className="sw sw-expr" />{t("editor.toolbar.legendExpr")}</span>
+          <span><i className="sw sw-math" />{t("editor.toolbar.legendMath")}</span>
+          <span><i className="sw sw-block" />{t("editor.toolbar.legendBlock")}</span>
         </div>
       )}
       {missIn.length + missFb.length > 0 ? (
         <div className="missing">
-          <span className="missing-label">Noch nicht platziert:</span>
+          <span className="missing-label">{t("editor.toolbar.notPlaced")}</span>
           {missIn.map((n) => (
-            <button key={`i-${n}`} type="button" className="tok tok-input add" title={`[[input:${n}]] [[validation:${n}]] an der Cursorposition einfügen`}
+            <button key={`i-${n}`} type="button" className="tok tok-input add" title={t("editor.toolbar.insertAtCursor", { tokens: `[[input:${n}]] [[validation:${n}]]` })}
               onMouseDown={(e) => e.preventDefault()} onClick={() => insert([`[[input:${n}]]`, `[[validation:${n}]]`])}>+ {n}</button>
           ))}
           {missFb.map((n) => (
-            <button key={`f-${n}`} type="button" className="tok tok-feedback add" title={`[[feedback:${n}]] an der Cursorposition einfügen`}
+            <button key={`f-${n}`} type="button" className="tok tok-feedback add" title={t("editor.toolbar.insertAtCursor", { tokens: `[[feedback:${n}]]` })}
               onMouseDown={(e) => e.preventDefault()} onClick={() => insert([`[[feedback:${n}]]`])}>+ {n}</button>
           ))}
         </div>
-      ) : (info.inputs.length + info.prts.length > 0 && <div className="missing complete"><IconCheck /> Alle Eingaben und PRTs sind platziert</div>)}
+      ) : (info.inputs.length + info.prts.length > 0 && <div className="missing complete"><IconCheck /> {t("editor.toolbar.allPlaced")}</div>)}
     </div>
   );
 }

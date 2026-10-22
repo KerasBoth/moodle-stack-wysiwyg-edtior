@@ -4,12 +4,17 @@ import { useMemo, useState } from "react";
 import { insertIntoLastEditor } from "@/lib/editor/context";
 import { ANSWER_TESTS } from "@/lib/stack/answertests";
 import { CASTEXT_BLOCKS, CATEGORIES, FUNCTION_DOCS, STACK_JXG_DOCS } from "@/lib/stack/docs";
+import { useT } from "./I18nProvider";
 import { IconX } from "./icons";
 
+// Interne Kennungen der Filter (die Funktionskategorien aus lib/stack/docs kommen mit ihren Namen, Task 8)
 const ALL = "Alle";
-const EXTRA = ["Antworttests", "CASText", "JSXGraph"];
+const TESTS = "Antworttests";
+const EXTRA = [TESTS, "CASText", "JSXGraph"];
 
 export default function Reference({ onClose, notify }: { onClose: () => void; notify: (m: string, err?: boolean) => void }) {
+  const t = useT();
+  const catLabel = (c: string) => (c === ALL ? t("editor.reference.all") : c === TESTS ? t("editor.reference.answerTests") : c);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<string>(ALL);
 
@@ -23,24 +28,24 @@ export default function Reference({ onClose, notify }: { onClose: () => void; no
   );
 
   const insert = (text: string) => {
-    if (insertIntoLastEditor(text)) notify(`„${text}“ eingefügt`);
-    else notify("Zuerst in ein Editorfeld klicken, dann einfügen", true);
+    if (insertIntoLastEditor(text)) notify(t("editor.reference.inserted", { text }));
+    else notify(t("editor.reference.clickEditorFirst"), true);
   };
 
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label="Funktionsreferenz">
+      <aside className="drawer" role="dialog" aria-label={t("editor.reference.title")}>
         <div className="drawer-head">
-          <h3>Funktionsreferenz</h3>
-          <span className="chip">{FUNCTION_DOCS.length} Funktionen</span>
-          <button className="btn ghost small" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Schließen"><IconX /></button>
+          <h3>{t("editor.reference.title")}</h3>
+          <span className="chip">{t("editor.reference.functions", { count: FUNCTION_DOCS.length })}</span>
+          <button className="btn ghost small" style={{ marginLeft: "auto" }} onClick={onClose} aria-label={t("common.close")}><IconX /></button>
         </div>
         <div className="drawer-search">
-          <input className="inp" autoFocus placeholder="Suchen: rand, Liste, Ableitung …" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="inp" autoFocus placeholder={t("editor.reference.searchPlaceholder")} value={query} onChange={(e) => setQuery(e.target.value)} />
           <div className="cats">
             {[ALL, ...CATEGORIES, ...EXTRA].map((c) => (
-              <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{c}</button>
+              <button key={c} className={cat === c ? "on" : ""} onClick={() => setCat(c)}>{catLabel(c)}</button>
             ))}
           </div>
         </div>
@@ -49,25 +54,25 @@ export default function Reference({ onClose, notify }: { onClose: () => void; no
             <div className="ref" key={f.name}>
               <div className="ref-head">
                 <span className="ref-sig">{f.sig}</span>
-                <button className="btn small" onClick={() => insert(f.cat === "Konstanten" ? f.name : `${f.name}()`)}>Einfügen</button>
+                <button className="btn small" onClick={() => insert(f.cat === "Konstanten" ? f.name : `${f.name}()`)}>{t("editor.reference.insert")}</button>
               </div>
               <p>{f.desc}</p>
-              <div className="ret"><b>Rückgabe:</b> {f.returns} <span className="chip" style={{ marginLeft: 6 }}>{f.cat}</span></div>
+              <div className="ret"><b>{t("editor.reference.returns")}</b> {f.returns} <span className="chip" style={{ marginLeft: 6 }}>{f.cat}</span></div>
               {f.example && <pre>{f.example}</pre>}
             </div>
           ))}
-          {(cat === ALL || cat === "Antworttests") && ANSWER_TESTS.filter((t) => match(t.name, t.description)).map((t) => (
-            <div className="ref" key={t.name}>
-              <div className="ref-head"><span className="ref-sig">{t.name}</span><span className="chip accent">Antworttest</span></div>
-              <p>{t.description}</p>
-              {t.needsOptions && <div className="ret"><b>Testoption:</b> {t.optionHint}</div>}
+          {(cat === ALL || cat === TESTS) && ANSWER_TESTS.filter((a) => match(a.name, a.description)).map((a) => (
+            <div className="ref" key={a.name}>
+              <div className="ref-head"><span className="ref-sig">{a.name}</span><span className="chip accent">{t("editor.reference.answerTest")}</span></div>
+              <p>{a.description}</p>
+              {a.needsOptions && <div className="ret"><b>{t("editor.reference.testOption")}</b> {a.optionHint}</div>}
             </div>
           ))}
           {(cat === ALL || cat === "CASText") && CASTEXT_BLOCKS.filter((b) => match(b.label, b.info)).map((b) => (
             <div className="ref" key={b.label}>
               <div className="ref-head">
                 <span className="ref-sig">{b.label}</span>
-                <button className="btn small" onClick={() => insert(b.insert.replace(/\$\{([^}]*)\}/g, "$1"))}>Einfügen</button>
+                <button className="btn small" onClick={() => insert(b.insert.replace(/\$\{([^}]*)\}/g, "$1"))}>{t("editor.reference.insert")}</button>
               </div>
               <p>{b.info}</p>
             </div>
@@ -86,7 +91,7 @@ export default function Reference({ onClose, notify }: { onClose: () => void; no
             <div className="ref" key={f.name}>
               <div className="ref-head">
                 <span className="ref-sig">{f.sig}</span>
-                <button className="btn small" onClick={() => insert(f.sig)}>Einfügen</button>
+                <button className="btn small" onClick={() => insert(f.sig)}>{t("editor.reference.insert")}</button>
               </div>
               <p>{f.desc}</p>
             </div>

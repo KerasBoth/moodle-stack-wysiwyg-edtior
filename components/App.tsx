@@ -21,7 +21,7 @@ import PrtsSection from "./sections/PrtsSection";
 import TestsSection from "./sections/TestsSection";
 import UserMenu from "./UserMenu";
 import LanguageSwitcher from "./LanguageSwitcher";
-import { useLocale } from "./I18nProvider";
+import { useLocale, useT } from "./I18nProvider";
 import { formatDate } from "@/lib/i18n";
 import SaveAsDialog from "./SaveAsDialog";
 import { isModalOpen, useDialogs } from "./Dialogs";
@@ -41,7 +41,8 @@ export interface SectionProps {
 type SectionId = "general" | "variables" | "text" | "inputs" | "prts" | "feedback" | "options" | "tests" | "xml";
 
 export type CasMode = "auto" | "local" | "maxima";
-export interface CasStatus { configured: boolean; loading: boolean; server?: string; error?: string; lastError?: string }
+/** `unreachable`: Server eingerichtet, aber nicht erreichbar (`detail` = Grund vom Server); `lastError`: letzte Server-Meldung. */
+export interface CasStatus { configured: boolean; loading: boolean; server?: string; unreachable?: { detail?: string }; lastError?: string }
 const CAS_MODE_KEY = "stack-editor-cas-mode";
 
 /** Die im Editor geöffnete Datei aus der Datenbank. */
@@ -65,6 +66,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const [sel, setSel] = useState(0);
   const dialogs = useDialogs();
   const locale = useLocale();
+  const t = useT();
   const [file, setFile] = useState<OpenFile | null>(null);
   const [saveAs, setSaveAs] = useState(false);
   const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId);
@@ -119,7 +121,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     try {
       const qz = parseQuiz(content);
       if (!qz.items.some((i) => i.kind === "stack")) {
-        notify("Die Datei enthält keine STACK-Aufgabe", true);
+        notify(t("editor.msg.noStackQuestion"), true);
         return false;
       }
       setQuiz(qz);
@@ -130,13 +132,16 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       const first = qz.items.find((i) => i.kind === "stack");
       const seeds = first?.kind === "stack" ? first.q.deployedseeds : [];
       setSeed(seeds.length ? Number(seeds[0]) : randomSeed());
-      notify(`${meta?.name ?? label ?? "XML"} geladen – ${qz.items.filter((i) => i.kind === "stack").length} STACK-Aufgabe(n)`);
+      notify(t("editor.msg.loaded", {
+        name: meta?.name ?? label ?? "XML",
+        questions: t("editor.msg.stackQuestions", { count: qz.items.filter((i) => i.kind === "stack").length }),
+      }));
       return true;
     } catch (e) {
-      notify(`XML konnte nicht gelesen werden: ${e instanceof Error ? e.message : e}`, true);
+      notify(t("editor.msg.xmlUnreadable", { error: e instanceof Error ? e.message : String(e) }), true);
       return false;
     }
-  }, [notify]);
+  }, [notify, t]);
 
   const fetchAndLoad = useCallback(async (id: number) => {
     try {
@@ -148,11 +153,16 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     }
   }, [loadXml, notify]);
 
+  /** Rückfrage vor dem Verwerfen ungespeicherter Änderungen; true = weitermachen. */
+  const confirmDiscard = useCallback(async () => !dirty || dialogs.confirm({
+    title: t("editor.confirm.discardTitle"), message: t("editor.confirm.discardMessage"), confirmLabel: t("editor.confirm.discard"), danger: true,
+  }), [dirty, dialogs, t]);
+
   const openServerFile = useCallback(async (id: number) => {
     setMenu(null);
-    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
+    if (!(await confirmDiscard())) return;
     fetchAndLoad(id);
-  }, [dirty, fetchAndLoad, dialogs]);
+  }, [confirmDiscard, fetchAndLoad]);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -173,7 +183,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         setSel(d.sel ?? 0);
         setSeed(d.seed ?? 1);
         setDirty(!!d.dirty);
-        notify("Letzter Arbeitsstand wiederhergestellt");
+        notify(t("editor.msg.draftRestored"));
       };
 
       if (startNew) {
@@ -193,7 +203,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       else setSeed(randomSeed());
     };
     init().finally(() => setReady(true));
-  }, [refreshFiles, fetchAndLoad, notify, user.id, startNew, initialFileId]);
+  }, [refreshFiles, fetchAndLoad, notify, t, user.id, startNew, initialFileId]);
 
   // Die Adresse zeigt die geöffnete Datei (Neuladen/Lesezeichen öffnen sie wieder) –
   // erst nach dem ersten Laden, sonst stünde kurz „?new=1“ statt der angeforderten Datei in der Adresse
@@ -201,8 +211,18 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     if (!ready) return;
     const url = file ? `/editor?file=${file.id}` : categoryId !== null ? `/editor?new=1&category=${categoryId}` : "/editor?new=1";
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
-    document.title = `${file?.name ?? "Neue Aufgabe"} – STACK-Editor`;
   }, [ready, file, categoryId]);
+
+  // Seitentitel mit Dateinamen. Nach dem Umschalten der Sprache setzt router.refresh() den Titel des Layouts
+  // erneut (asynchron, nach diesem Effekt) – deshalb den Titel im <head> beobachten und wiederherstellen.
+  const docTitle = t("editor.docTitle", { name: file?.name ?? t("editor.newQuestion"), app: t("common.appName") });
+  useEffect(() => {
+    if (!ready) return;
+    document.title = docTitle;
+    const obs = new MutationObserver(() => { if (document.title !== docTitle) document.title = docTitle; });
+    obs.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => obs.disconnect();
+  }, [ready, docTitle]);
 
   // Entwurf automatisch sichern
   useEffect(() => {
@@ -246,7 +266,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       if (m === "auto" || m === "local" || m === "maxima") setCasModeState(m);
     } catch { /* Standard: automatisch */ }
     api<{ configured: boolean; reachable?: boolean; server?: string; error?: string }>("/api/maxima")
-      .then((s) => setCasStatus((c) => ({ ...c, configured: s.configured, server: s.server, error: s.configured && !s.reachable ? `Maxima-Server nicht erreichbar${s.error ? ` (${s.error})` : ""}` : undefined })))
+      .then((s) => setCasStatus((c) => ({ ...c, configured: s.configured, server: s.server, unreachable: s.configured && !s.reachable ? { detail: s.error } : undefined })))
       .catch(() => { /* ohne Server: lokal */ });
   }, []);
   const setCasMode = useCallback((m: CasMode) => {
@@ -266,7 +286,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         prts: q.prts.map((p) => p.name),
       };
     };
-    const t = window.setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       let local: PreviewBuild;
       try {
         local = buildPreview(q, seed);
@@ -307,13 +327,15 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         if (cancelled) return;
         // Server nicht verfügbar: bei der lokalen Vorschau bleiben, Grund anzeigen
         const msg = e instanceof Error ? e.message : String(e);
-        local.issues.unshift({ severity: "warning", where: "Fragevariablen", message: `Maxima-Server: ${msg} – lokale Vorschau wird verwendet` });
+        // „where“ bleibt der interne Bereichsname (Zuordnung zur Navigation), wie in lib/stack/preview
+        local.issues.unshift({ severity: "warning", where: "Fragevariablen", message: t("editor.msg.maximaFallback", { error: msg }) });
         publish({ ...local });
         setCasStatus((c) => ({ ...c, loading: false, lastError: msg }));
       }
     }, 300);
-    return () => { cancelled = true; window.clearTimeout(t); };
-  }, [q, seed, casMode, casStatus.configured]);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+    // t: nach dem Umschalten der Sprache die Meldung oben neu erzeugen
+  }, [q, seed, casMode, casStatus.configured, t]);
 
   // ---- Speichern ------------------------------------------------------------------------
 
@@ -322,7 +344,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   /** Speichert in der Datenbank; neue Aufgaben bekommen ohne Rückfrage einen Namen aus dem Aufgabentitel. Liefert die gespeicherte Datei. */
   const doSave = useCallback(async (): Promise<FileInfo | null> => {
     if (file?.role === "read") {
-      notify("Nur Lesezugriff – speichern nicht möglich", true);
+      notify(t("editor.msg.readOnlyNoSave"), true);
       return null;
     }
     try {
@@ -336,9 +358,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
         } catch (e) {
           if (!(e instanceof ApiError && e.data.conflict)) throw e;
           const ok = await dialogs.confirm({
-            title: "Datei wurde geändert",
-            message: <div style={{ whiteSpace: "pre-line" }}>{`${e.message}.\n\nTrotzdem mit deinem Stand überschreiben? (Die andere Fassung bleibt als Version erhalten)`}</div>,
-            confirmLabel: "Überschreiben", danger: true,
+            title: t("editor.confirm.conflictTitle"),
+            message: <div style={{ whiteSpace: "pre-line" }}>{`${e.message}.\n\n${t("editor.confirm.conflictQuestion")}`}</div>,
+            confirmLabel: t("common.overwrite"), danger: true,
           });
           if (!ok) return null;
           saved = (await put(true)).file;
@@ -352,13 +374,13 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       setCategoryId(saved.categoryId);
       setDirty(false);
       refreshFiles();
-      notify(`Gespeichert: ${saved.name}`);
+      notify(t("editor.msg.saved", { name: saved.name }));
       return saved;
     } catch (e) {
-      notify(e instanceof Error ? e.message : "Speichern fehlgeschlagen", true);
+      notify(e instanceof Error ? e.message : t("editor.msg.saveFailed"), true);
       return null;
     }
-  }, [file, categoryId, q, xmlText, notify, refreshFiles, dialogs]);
+  }, [file, categoryId, q, xmlText, notify, refreshFiles, dialogs, t]);
 
   /** Läuft bereits ein Speichern, wird dessen Ergebnis geliefert – kein zweiter Request (sonst entstünde eine zweite Datei bzw. ein veralteter Stand). */
   const saveToServer = useCallback((): Promise<FileInfo | null> => {
@@ -379,28 +401,28 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       setCategoryId(saved.categoryId);
       setDirty(false);
       refreshFiles();
-      notify(`Gespeichert: ${saved.name}`);
+      notify(t("editor.msg.saved", { name: saved.name }));
       setSaveAs(false);
       return {};
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.data.exists) return { exists: true, error: e.message };
-      return { error: e instanceof Error ? e.message : "Speichern fehlgeschlagen" };
+      return { error: e instanceof Error ? e.message : t("editor.msg.saveFailed") };
     }
-  }, [file, categoryId, xmlText, notify, refreshFiles]);
+  }, [file, categoryId, xmlText, notify, refreshFiles, t]);
 
   /** Dateiname ändern (nur Besitzer). Liefert eine Fehlermeldung oder null. */
   const renameFile = useCallback(async (name: string): Promise<string | null> => {
-    if (!file) return "Datei ist noch nicht gespeichert";
+    if (!file) return t("editor.msg.notSavedYet");
     try {
       const { file: f } = await api<{ file: FileInfo }>(`/api/files/${file.id}`, { method: "PUT", body: { name } });
       setFile((cur) => (cur && cur.id === f.id ? { ...cur, name: f.name, updatedAt: f.updatedAt } : cur));
       refreshFiles();
-      notify(`Umbenannt: ${f.name}`);
+      notify(t("editor.msg.renamed", { name: f.name }));
       return null;
     } catch (e) {
-      return e instanceof ApiError && e.status === 409 && e.data.exists ? `${e.message}.` : e instanceof Error ? e.message : "Umbenennen fehlgeschlagen";
+      return e instanceof ApiError && e.status === 409 && e.data.exists ? `${e.message}.` : e instanceof Error ? e.message : t("editor.msg.renameFailed");
     }
-  }, [file, notify, refreshFiles]);
+  }, [file, notify, refreshFiles, t]);
 
   /** Kategorie wechseln – bei gespeicherten Dateien sofort in der Datenbank. */
   const changeCategory = useCallback(async (id: number | null) => {
@@ -408,11 +430,11 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     if (!file) return;
     try {
       await api(`/api/files/${file.id}`, { method: "PUT", body: { categoryId: id } });
-      notify(`Kategorie: ${categories.find((c) => c.id === id)?.name ?? "ohne"}`);
+      notify(t("editor.msg.categoryChanged", { name: categories.find((c) => c.id === id)?.name ?? t("editor.msg.categoryNone") }));
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), true);
     }
-  }, [file, categories, notify]);
+  }, [file, categories, notify, t]);
 
   const readOnly = file?.role === "read";
   const shared = !!file && file.role !== "owner";
@@ -435,8 +457,8 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   const copyXml = useCallback(async () => {
     await navigator.clipboard.writeText(xmlText());
-    notify("XML in die Zwischenablage kopiert");
-  }, [xmlText, notify]);
+    notify(t("editor.msg.xmlCopied"));
+  }, [xmlText, notify, t]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -453,9 +475,9 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   }, [saveToServer, saveAndDownload]);
 
   const readLocalFile = useCallback(async (f: File) => {
-    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
-    f.text().then((t) => loadXml(t, null, f.name));
-  }, [dirty, loadXml, dialogs]);
+    if (!(await confirmDiscard())) return;
+    f.text().then((text) => loadXml(text, null, f.name));
+  }, [confirmDiscard, loadXml]);
 
   // Drag & Drop von XML-Dateien
   useEffect(() => {
@@ -482,6 +504,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const addQuestion = (copy: boolean) => {
     setQuiz((prev) => {
       const next = structuredClone(prev);
+      // Inhalt (ins XML), nicht übersetzen
       const nq = copy && q ? { ...structuredClone(q), uid: newUid(), name: `${q.name} (Kopie)`, comment: "" } : newQuestion();
       next.items.push({ kind: "stack", q: nq });
       return next;
@@ -492,14 +515,17 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
   const deleteQuestion = async () => {
     if (!current || stackItems.length < 2) return;
     const uid = q?.uid;
-    if (!(await dialogs.confirm({ title: "Aufgabe entfernen?", message: `Aufgabe „${q?.name}“ aus der Datei entfernen?`, confirmLabel: "Entfernen", danger: true }))) return;
+    if (!(await dialogs.confirm({
+      title: t("editor.confirm.removeQuestionTitle"), message: t("editor.confirm.removeQuestionMessage", { name: q?.name ?? "" }),
+      confirmLabel: t("editor.confirm.remove"), danger: true,
+    }))) return;
     setQuiz((prev) => ({ items: prev.items.filter((it) => !(it.kind === "stack" && it.q.uid === uid)) }));
     setSel(Math.max(0, sel - 1));
     setDirty(true);
   };
   const newFile = async () => {
     setMenu(null);
-    if (dirty && !(await dialogs.confirm({ title: "Änderungen verwerfen?", message: "Ungespeicherte Änderungen verwerfen?", confirmLabel: "Verwerfen", danger: true }))) return;
+    if (!(await confirmDiscard())) return;
     setQuiz({ items: [{ kind: "stack", q: newQuestion() }] });
     setSel(0);
     setFile(null);
@@ -533,17 +559,18 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     const list = build?.issues.filter((i) => where(i.where)) ?? [];
     return { err: list.filter((i) => i.severity === "error").length, warn: list.filter((i) => i.severity === "warning").length };
   };
+  // Die Vergleiche mit `where` nutzen die internen Bereichsnamen aus lib/stack/preview (keine Anzeigetexte)
   const nav: { id: SectionId; label: string; icon: React.ReactNode; count?: number; issues?: { err: number; warn: number } }[] = q
     ? [
-        { id: "general", label: "Allgemein", icon: <IconInfo />, issues: issueCount((w) => w === "Fragenotiz") },
-        { id: "variables", label: "Fragevariablen", icon: <IconVars />, issues: issueCount((w) => w === "Fragevariablen") },
-        { id: "text", label: "Fragetext", icon: <IconText />, issues: issueCount((w) => w === "Fragetext") },
-        { id: "inputs", label: "Eingaben", icon: <IconInput />, count: q.inputs.length, issues: issueCount((w) => w.startsWith("Eingabe")) },
-        { id: "prts", label: "Rückmeldebäume", icon: <IconTree />, count: q.prts.length, issues: issueCount((w) => w.startsWith("PRT")) },
-        { id: "feedback", label: "Feedback", icon: <IconChat />, issues: issueCount((w) => w.includes("Feedback")) },
-        { id: "options", label: "Optionen", icon: <IconGear /> },
-        { id: "tests", label: "Tests & Varianten", icon: <IconFlask />, count: q.qtests.length },
-        { id: "xml", label: "XML", icon: <IconCode /> },
+        { id: "general", label: t("editor.nav.general"), icon: <IconInfo />, issues: issueCount((w) => w === "Fragenotiz") },
+        { id: "variables", label: t("editor.nav.variables"), icon: <IconVars />, issues: issueCount((w) => w === "Fragevariablen") },
+        { id: "text", label: t("editor.nav.text"), icon: <IconText />, issues: issueCount((w) => w === "Fragetext") },
+        { id: "inputs", label: t("editor.nav.inputs"), icon: <IconInput />, count: q.inputs.length, issues: issueCount((w) => w.startsWith("Eingabe")) },
+        { id: "prts", label: t("editor.nav.prts"), icon: <IconTree />, count: q.prts.length, issues: issueCount((w) => w.startsWith("PRT")) },
+        { id: "feedback", label: t("editor.nav.feedback"), icon: <IconChat />, issues: issueCount((w) => w.includes("Feedback")) },
+        { id: "options", label: t("editor.nav.options"), icon: <IconGear /> },
+        { id: "tests", label: t("editor.nav.tests"), icon: <IconFlask />, count: q.qtests.length },
+        { id: "xml", label: t("editor.nav.xml"), icon: <IconCode /> },
       ]
     : [];
 
@@ -553,92 +580,94 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
     <div className={`app${readOnly ? " has-band" : ""}`}>
       <header className="topbar">
         <div className="menu">
-          <button className={`tbtn burger${menu ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!menu} aria-label="Menü"
-            title="Menü" onClick={() => { setMenu(menu ? null : "open"); if (!menu) refreshFiles(); }}>
+          <button className={`tbtn burger${menu ? " on" : ""}`} aria-haspopup="menu" aria-expanded={!!menu} aria-label={t("editor.menu.menu")}
+            title={t("editor.menu.menu")} onClick={() => { setMenu(menu ? null : "open"); if (!menu) refreshFiles(); }}>
             <IconMenu />
           </button>
           {menu === "open" && (
             <>
               <div className="menu-veil" onClick={() => setMenu(null)} />
-              <nav className="burger-pop" aria-label="Hauptmenü">
-                <a className="mi" href="/"><span><IconHome /> Dashboard</span></a>
-                <div className="burger-sep">Datei</div>
-                <button className="mi" onClick={newFile}><span><IconPlus /> Neue Aufgabe</span></button>
-                <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> XML hochladen …</span><small>oder ins Fenster ziehen</small></button>
-                <button className="mi" disabled={readOnly || saving} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> Speichern</span><kbd>Strg+S</kbd></button>
-                <button className="mi" onClick={() => { setMenu(null); setSaveAs(true); }}><span><IconSave /> Speichern unter …</span></button>
+              <nav className="burger-pop" aria-label={t("editor.menu.mainMenu")}>
+                <a className="mi" href="/"><span><IconHome /> {t("dashboard.title")}</span></a>
+                <div className="burger-sep">{t("editor.menu.file")}</div>
+                <button className="mi" onClick={newFile}><span><IconPlus /> {t("editor.newQuestion")}</span></button>
+                <button className="mi" onClick={() => { setMenu(null); fileInput.current?.click(); }}><span><IconUpload /> {t("editor.menu.uploadXml")}</span><small>{t("editor.menu.orDragHere")}</small></button>
+                <button className="mi" disabled={readOnly || saving} onClick={() => { setMenu(null); saveToServer(); }}><span><IconSave /> {t("common.save")}</span><kbd>{t("editor.keys.save")}</kbd></button>
+                <button className="mi" onClick={() => { setMenu(null); setSaveAs(true); }}><span><IconSave /> {t("editor.menu.saveAs")}</span></button>
                 {readOnly ? (
-                  <button className="mi" onClick={() => { setMenu(null); download(); }}><span><IconDownload /> Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                  <button className="mi" onClick={() => { setMenu(null); download(); }}><span><IconDownload /> {t("editor.menu.download")}</span><kbd>{t("editor.keys.saveAndDownload")}</kbd></button>
                 ) : (
-                  <button className="mi" onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> Speichern &amp; Download</span><kbd>Strg+Umschalt+S</kbd></button>
+                  <button className="mi" onClick={() => { setMenu(null); saveAndDownload(); }}><span><IconDownload /> {t("editor.menu.saveAndDownload")}</span><kbd>{t("editor.keys.saveAndDownload")}</kbd></button>
                 )}
-                <button className="mi" onClick={() => { setMenu(null); copyXml(); }}><span><IconCopy /> XML kopieren</span></button>
-                <div className="burger-sep">Kategorie</div>
+                <button className="mi" onClick={() => { setMenu(null); copyXml(); }}><span><IconCopy /> {t("editor.menu.copyXml")}</span></button>
+                <div className="burger-sep">{t("editor.menu.category")}</div>
                 {shared ? (
-                  <div className="mi muted-mi"><small>Geteilt von {file?.ownerName}</small></div>
+                  <div className="mi muted-mi"><small>{t("editor.sharedBy", { name: file?.ownerName ?? "" })}</small></div>
                 ) : (
                   <div className="burger-field">
-                    <select className="sel" value={categoryId ?? ""} onChange={(e) => changeCategory(e.target.value ? Number(e.target.value) : null)} aria-label="Kategorie dieser Datei">
-                      <option value="">Ohne Kategorie</option>
+                    <select className="sel" value={categoryId ?? ""} onChange={(e) => changeCategory(e.target.value ? Number(e.target.value) : null)} aria-label={t("editor.menu.fileCategory")}>
+                      <option value="">{t("common.uncategorized")}</option>
                       {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                 )}
-                <div className="burger-sep">Ansicht</div>
-                <button className="mi" onClick={() => { setMenu(null); setShowRef(true); }}><span><IconBook /> Funktionsreferenz</span></button>
+                <div className="burger-sep">{t("editor.menu.view")}</div>
+                <button className="mi" onClick={() => { setMenu(null); setShowRef(true); }}><span><IconBook /> {t("editor.menu.reference")}</span></button>
                 <button className="mi" role="menuitemcheckbox" aria-checked={showPreview} onClick={() => setShowPreview(!showPreview)}>
-                  <span><IconPanel /> Vorschau</span>{showPreview ? <span className="mi-state on">an</span> : <span className="mi-state">aus</span>}
+                  <span><IconPanel /> {t("editor.menu.preview")}</span>{showPreview ? <span className="mi-state on">{t("editor.menu.on")}</span> : <span className="mi-state">{t("editor.menu.off")}</span>}
                 </button>
-                <div className="burger-sep">Zuletzt bearbeitet</div>
-                {files.length === 0 && <div className="mi muted-mi"><small>Noch keine Dateien gespeichert</small></div>}
+                <div className="burger-sep">{t("editor.menu.recent")}</div>
+                {files.length === 0 && <div className="mi muted-mi"><small>{t("editor.menu.noFiles")}</small></div>}
                 <div className="menu-scroll short">
                   {files.slice(0, 10).map((f) => (
-                    <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)} title={`${f.name}${f.role !== "owner" ? ` (geteilt von ${f.ownerName})` : f.categoryName ? ` (${f.categoryName})` : ""}`}>
+                    <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)}
+                      title={f.role !== "owner" ? t("editor.menu.fileSharedBy", { name: f.name, owner: f.ownerName })
+                        : f.categoryName ? t("editor.menu.fileInCategory", { name: f.name, category: f.categoryName }) : f.name}>
                       <span className="mi-file"><IconFile /><span className="mi-file-name">{f.questions[0] ?? f.name}</span></span>
                       <small>{f.role !== "owner" ? `${f.ownerName} · ` : ""}{formatDate(locale, f.updatedAt)}</small>
                     </button>
                   ))}
                 </div>
-                <a className="mi" href="/"><span className="muted-link">Alle Dateien im Dashboard …</span></a>
+                <a className="mi" href="/"><span className="muted-link">{t("editor.menu.allFiles")}</span></a>
               </nav>
             </>
           )}
         </div>
         <input ref={fileInput} type="file" accept=".xml,application/xml,text/xml" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) readLocalFile(f); e.target.value = ""; }} />
-        <a className="brand" href="/" title="Zum Dashboard">
+        <a className="brand" href="/" title={t("editor.toDashboard")}>
           <div className="brand-mark">S</div>
-          <span className="brand-text">STACK-Editor</span>
+          <span className="brand-text">{t("common.appName")}</span>
         </a>
         <div className="doc-title">
           <span className="filename">
-            {fileName ? <b>{fileName}</b> : <i>nicht gespeichert</i>}
-            {dirty && <span className="dirty-dot" title="Ungespeicherte Änderungen" />}
+            {fileName ? <b>{fileName}</b> : <i>{t("editor.notSaved")}</i>}
+            {dirty && <span className="dirty-dot" title={t("editor.unsavedChanges")} />}
           </span>
           {shared
-            ? <span className="doc-cat" title="Diese Datei gehört einem anderen Nutzer">Geteilt von {file?.ownerName}</span>
-            : <span className="doc-cat" title="Kategorie (im Menü änderbar)">{categories.find((c) => c.id === categoryId)?.name ?? "Ohne Kategorie"}</span>}
+            ? <span className="doc-cat" title={t("editor.ownedByOther")}>{t("editor.sharedBy", { name: file?.ownerName ?? "" })}</span>
+            : <span className="doc-cat" title={t("editor.categoryHint")}>{categories.find((c) => c.id === categoryId)?.name ?? t("common.uncategorized")}</span>}
         </div>
         <div className="spacer" />
-        <button className="tbtn primary" disabled={readOnly || saving}onClick={() => saveToServer()} title={readOnly ? "Nur Lesezugriff" : "In der Datenbank speichern (Strg+S)"}><IconSave /> Speichern</button>
+        <button className="tbtn primary" disabled={readOnly || saving}onClick={() => saveToServer()} title={readOnly ? t("editor.readOnly") : t("editor.saveTitle", { shortcut: t("editor.keys.save") })}><IconSave /> {t("common.save")}</button>
         <LanguageSwitcher />
         <UserMenu user={user} notify={notify} />
       </header>
-      {readOnly && <div className="readonly-band" role="status">Nur lesen – geteilt von {file?.ownerName}</div>}
+      {readOnly && <div className="readonly-band" role="status">{t("editor.readOnlyBand", { name: file?.ownerName ?? "" })}</div>}
 
       <div className={`workspace ${showPreview ? "" : "no-preview"}`} style={{ ["--preview-w" as string]: `${previewW}%` }}>
         <aside className="sidebar">
           <div className="qlist">
-            <select value={Math.min(sel, stackItems.length - 1)} onChange={(e) => setSel(Number(e.target.value))} title="Aufgabe in dieser Datei">
+            <select value={Math.min(sel, stackItems.length - 1)} onChange={(e) => setSel(Number(e.target.value))} title={t("editor.sidebar.questionInFile")}>
               {stackItems.map((s, i) => (
                 <option key={s.it.kind === "stack" ? s.it.q.uid : i} value={i}>
-                  {i + 1}. {s.it.kind === "stack" ? s.it.q.name || "(ohne Namen)" : ""}
+                  {i + 1}. {s.it.kind === "stack" ? s.it.q.name || t("editor.sidebar.unnamed") : ""}
                 </option>
               ))}
             </select>
             <div className="row">
-              <button className="btn small" onClick={() => addQuestion(false)} title="Neue Aufgabe in dieser Datei"><IconPlus /> Neu</button>
-              <button className="btn small" onClick={() => addQuestion(true)} title="Aufgabe duplizieren"><IconCopy /> Kopie</button>
-              <button className="btn small danger" disabled={stackItems.length < 2} onClick={deleteQuestion} title="Aufgabe entfernen"><IconTrash /></button>
+              <button className="btn small" onClick={() => addQuestion(false)} title={t("editor.sidebar.newInFile")}><IconPlus /> {t("editor.sidebar.new")}</button>
+              <button className="btn small" onClick={() => addQuestion(true)} title={t("editor.sidebar.duplicate")}><IconCopy /> {t("editor.sidebar.copy")}</button>
+              <button className="btn small danger" disabled={stackItems.length < 2} onClick={deleteQuestion} title={t("editor.sidebar.removeQuestion")} aria-label={t("editor.sidebar.removeQuestion")}><IconTrash /></button>
             </div>
           </div>
           <nav className="nav">
@@ -653,8 +682,8 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
             ))}
           </nav>
           <div className="sidebar-foot">
-            Strg+Leertaste: Vervollständigung<br />
-            Maus über Funktion: Hilfe
+            {t("editor.sidebar.hintComplete")}<br />
+            {t("editor.sidebar.hintHover")}
           </div>
         </aside>
 
@@ -683,7 +712,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       {saveAs && <SaveAsDialog initialName={file?.name ?? fileNameFromTitle(q?.name ?? "")} onSave={saveAsNew} onClose={() => setSaveAs(false)} />}
       {showRef && <Reference onClose={() => setShowRef(false)} notify={notify} />}
       {toast && <div className={`toast ${toast.err ? "err" : ""}`}>{toast.msg}</div>}
-      {dragOver && <div className="dropzone">XML-Datei hier ablegen</div>}
+      {dragOver && <div className="dropzone">{t("editor.dropHere")}</div>}
     </div>
   );
 }

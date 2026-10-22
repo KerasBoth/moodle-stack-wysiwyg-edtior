@@ -9,6 +9,7 @@ import { type FormulaView, useFormulaView } from "@/lib/editor/formulaView";
 import { renderTex } from "@/lib/editor/mathjax";
 import { chipFor, piMark, protect, restoreProtected, restoreProtectedText } from "@/lib/editor/protect";
 import { useDialogs } from "../Dialogs";
+import { useT } from "../I18nProvider";
 import { IconClearFormat, IconList, IconListNum, IconPara } from "../icons";
 import FormulaEditor, { type FormulaApplyResult } from "./FormulaEditor";
 import { type InsertTokens, TBtn, TGroup, Toolbar } from "./TextToolbar";
@@ -96,6 +97,7 @@ interface Props {
 export default function VisualEditor({ value, onChange, minHeight = "300px", lead, end, onInsertApi, onEditGraph }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const dialogs = useDialogs();
+  const t = useT();
   const store = useRef<string[]>([]);
   const lastEmitted = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -211,7 +213,10 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
 
   const insertCas = async () => {
     const saved = saveSelection();
-    const expr = await dialogs.prompt({ title: "Maxima-Ausdruck einfügen", label: "Ausdruck", mono: true, message: "Wird als {@…@} eingefügt.", confirmLabel: "Einfügen" });
+    const expr = await dialogs.prompt({
+      title: t("editor.visual.insertCasTitle"), label: t("editor.visual.expression"), mono: true,
+      message: t("editor.visual.insertCasHint"), confirmLabel: t("editor.visual.insert"),
+    });
     if (!restoreSelection(saved) || !expr) return;
     insertProtected(`{@${expr}@}`);
   };
@@ -228,7 +233,10 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     const result = await editFormula(initial);
     if (!result || !el.isConnected || !ref.current) return;
     if (result.kind === "empty") {
-      const ok = await dialogs.confirm({ title: "Formel entfernen?", message: "Die Formel ist leer. Soll sie aus dem Text entfernt werden?", confirmLabel: "Entfernen", danger: true });
+      const ok = await dialogs.confirm({
+        title: t("editor.visual.removeFormulaTitle"), message: t("editor.visual.removeFormulaMessage"),
+        confirmLabel: t("editor.visual.remove"), danger: true,
+      });
       if (!ok || !el.isConnected) return;
       el.remove();
       emit();
@@ -264,7 +272,9 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     if (formula) { await editMathChip(el, i, orig, formula); return; }
     const m = /^\{([@#])([\s\S]*)\1\}$/.exec(orig);
     if (!m) return;
-    const next = await dialogs.prompt({ title: "Ausdruck bearbeiten", label: "Ausdruck", initial: m[2], mono: true, confirmLabel: "Übernehmen" });
+    const next = await dialogs.prompt({
+      title: t("editor.visual.editExpressionTitle"), label: t("editor.visual.expression"), initial: m[2], mono: true, confirmLabel: t("common.apply"),
+    });
     if (next === null || !el.isConnected || !ref.current) return;
     store.current[i] = `{${m[1]}${next}${m[1]}}`;
     el.textContent = store.current[i];
@@ -298,29 +308,29 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
   return (
     <>
       <Toolbar>
-        {lead && <TGroup label="STACK-Elemente">{lead}</TGroup>}
-        <TGroup label="Mathematik">
-          <TBtn title="Maxima-Wert einfügen {@…@}" onClick={insertCas} wide><span className="glyph-code">{"{@ @}"}</span></TBtn>
-          <TBtn title="Formel einfügen \( … \)" onClick={insertMath} wide><span className="glyph-math">∑ Formel</span></TBtn>
-          <TBtn title="Formeln: gesetzt / LaTeX" onClick={() => setFormulaView(formulaView === "rendered" ? "latex" : "rendered")} wide>
-            {formulaView === "rendered" ? <span className="glyph-math">x² gesetzt</span> : <span className="glyph-code">{"\\( \\) LaTeX"}</span>}
+        {lead && <TGroup label={t("editor.visual.stackElements")}>{lead}</TGroup>}
+        <TGroup label={t("editor.visual.math")}>
+          <TBtn title={t("editor.visual.insertCas")} onClick={insertCas} wide><span className="glyph-code">{"{@ @}"}</span></TBtn>
+          <TBtn title={t("editor.visual.insertFormula")} onClick={insertMath} wide><span className="glyph-math">∑ {t("editor.visual.formula")}</span></TBtn>
+          <TBtn title={t("editor.visual.formulaView")} onClick={() => setFormulaView(formulaView === "rendered" ? "latex" : "rendered")} wide>
+            {formulaView === "rendered" ? <span className="glyph-math">x² {t("editor.visual.rendered")}</span> : <span className="glyph-code">{"\\( \\) LaTeX"}</span>}
           </TBtn>
         </TGroup>
-        <TGroup label="Zeichenformat">
-          <TBtn title="Fett" onClick={() => exec("bold")} active={!!active.bold}><b>B</b></TBtn>
-          <TBtn title="Kursiv" onClick={() => exec("italic")} active={!!active.italic}><i>I</i></TBtn>
-          <TBtn title="Unterstrichen" onClick={() => exec("underline")} active={!!active.underline}><u>U</u></TBtn>
-          <TBtn title="Tiefgestellt" onClick={() => exec("subscript")} active={!!active.subscript}><span>x<sub>2</sub></span></TBtn>
-          <TBtn title="Hochgestellt" onClick={() => exec("superscript")} active={!!active.superscript}><span>x<sup>2</sup></span></TBtn>
+        <TGroup label={t("editor.visual.charFormat")}>
+          <TBtn title={t("editor.visual.bold")} onClick={() => exec("bold")} active={!!active.bold}><b>B</b></TBtn>
+          <TBtn title={t("editor.visual.italic")} onClick={() => exec("italic")} active={!!active.italic}><i>I</i></TBtn>
+          <TBtn title={t("editor.visual.underline")} onClick={() => exec("underline")} active={!!active.underline}><u>U</u></TBtn>
+          <TBtn title={t("editor.visual.subscript")} onClick={() => exec("subscript")} active={!!active.subscript}><span>x<sub>2</sub></span></TBtn>
+          <TBtn title={t("editor.visual.superscript")} onClick={() => exec("superscript")} active={!!active.superscript}><span>x<sup>2</sup></span></TBtn>
         </TGroup>
-        <TGroup label="Absatzformat">
-          <TBtn title="Absatz" onClick={() => exec("formatBlock", "<p>")} active={!!active.p}><IconPara /></TBtn>
-          <TBtn title="Überschrift" onClick={() => exec("formatBlock", "<h3>")} active={!!active.h3}><b>H</b></TBtn>
-          <TBtn title="Aufzählung" onClick={() => exec("insertUnorderedList")} active={!!active.insertUnorderedList}><IconList /></TBtn>
-          <TBtn title="Nummerierte Liste" onClick={() => exec("insertOrderedList")} active={!!active.insertOrderedList}><IconListNum /></TBtn>
-          <TBtn title="Formatierung entfernen" onClick={() => exec("removeFormat")}><IconClearFormat /></TBtn>
+        <TGroup label={t("editor.visual.paraFormat")}>
+          <TBtn title={t("editor.visual.paragraph")} onClick={() => exec("formatBlock", "<p>")} active={!!active.p}><IconPara /></TBtn>
+          <TBtn title={t("editor.visual.heading")} onClick={() => exec("formatBlock", "<h3>")} active={!!active.h3}><b>H</b></TBtn>
+          <TBtn title={t("editor.visual.bulletList")} onClick={() => exec("insertUnorderedList")} active={!!active.insertUnorderedList}><IconList /></TBtn>
+          <TBtn title={t("editor.visual.numberedList")} onClick={() => exec("insertOrderedList")} active={!!active.insertOrderedList}><IconListNum /></TBtn>
+          <TBtn title={t("editor.visual.clearFormat")} onClick={() => exec("removeFormat")}><IconClearFormat /></TBtn>
         </TGroup>
-        {end && <TGroup label="Ansicht" end>{end}</TGroup>}
+        {end && <TGroup label={t("editor.visual.view")} end>{end}</TGroup>}
       </Toolbar>
       <div
         ref={ref}

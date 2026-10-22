@@ -4,6 +4,7 @@
 // freier Text bleibt jederzeit möglich.
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../I18nProvider";
 import { IconCheck, IconDown } from "../icons";
 import { MaximaEditor } from "./CodeEditors";
 
@@ -22,6 +23,7 @@ export default function ValueField({ value, onChange, groups, placeholder, label
   /** Richtung, in die die Liste aufklappt (rechts stehende Felder: "right"). */
   align?: "left" | "right";
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export default function ValueField({ value, onChange, groups, placeholder, label
       <div className="value-field-row">
         <div className="value-field-editor"><MaximaEditor mode="expr" value={value} onChange={onChange} placeholder={placeholder} /></div>
         <button type="button" className={`value-field-btn${open ? " on" : ""}`} aria-haspopup="listbox" aria-expanded={open}
-          disabled={!total} title={total ? `${label}: definierten Wert auswählen` : "Keine definierten Werte vorhanden"}
+          disabled={!total} title={total ? t("editor.valueField.pick", { label }) : t("editor.valueField.noValues")}
           onClick={() => setOpen(!open)}>
           <IconDown />
         </button>
@@ -57,7 +59,7 @@ export default function ValueField({ value, onChange, groups, placeholder, label
       {open && (
         <div className={`tmenu-pop value-pop ${align}`} role="listbox" aria-label={label}>
           {total > 6 && (
-            <input ref={search} className="inp value-search" placeholder="Filtern …" value={filter} onChange={(e) => setFilter(e.target.value)}
+            <input ref={search} className="inp value-search" placeholder={t("editor.valueField.filter")} value={filter} onChange={(e) => setFilter(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && visible[0]) { e.preventDefault(); pick(visible[0].options[0].value); } }} />
           )}
           {visible.map((g) => (
@@ -73,7 +75,7 @@ export default function ValueField({ value, onChange, groups, placeholder, label
               ))}
             </div>
           ))}
-          {!visible.length && <div className="tmenu-head">Keine Treffer. Der Text im Feld kann frei eingegeben werden.</div>}
+          {!visible.length && <div className="tmenu-head">{t("editor.valueField.noMatches")}</div>}
         </div>
       )}
     </div>

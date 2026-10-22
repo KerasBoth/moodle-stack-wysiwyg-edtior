@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "./I18nProvider";
 import { IconX } from "./icons";
 
 const stack: symbol[] = [];
@@ -15,6 +16,7 @@ export function isModalOpen(): boolean {
 }
 
 export function Modal({ title, ariaLabel, onClose, children, wide, className }: { title: React.ReactNode; ariaLabel?: string; onClose: () => void; children: React.ReactNode; wide?: boolean; className?: string }) {
+  const t = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -44,7 +46,7 @@ export function Modal({ title, ariaLabel, onClose, children, wide, className }: 
       <div className={`modal ${wide ? "wide" : ""} ${className ?? ""}`.trim()} role="dialog" aria-modal="true" aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="btn ghost small" onClick={onClose} aria-label="Schließen"><IconX /></button>
+          <button className="btn ghost small" onClick={onClose} aria-label={t("common.close")}><IconX /></button>
         </div>
         <div className="modal-body">{children}</div>
       </div>

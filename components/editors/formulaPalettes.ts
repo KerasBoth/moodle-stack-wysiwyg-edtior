@@ -40,9 +40,9 @@ export function matrixLatex(env: string, rows: number, cols: number): string {
  *  Nicht nach Anfang/Operator/Klammer auf/Relation/Leerraum, damit z. B. „dy/dx“ und „\int dx“ unverändert bleiben. */
 const DIFFERENTIAL_AFTER = "letter+digit+frac+surd+closefence+array";
 
-/** Inline-Kürzel: „dx“, „dt“ … hinter einem Integranden werden zu `\,dx`, `\,dt` … (halber Abstand wie in der Palette). */
+/** Inline-Kürzel: „dx“, „dt“ … hinter einem Integranden werden zu `\,\mathrm{d}x` … (halber Abstand, aufrechtes d wie in der Palette). */
 export const DIFFERENTIAL_SHORTCUTS: Record<string, { value: string; after: string }> = Object.fromEntries(
-  ["x", "y", "z", "t", "u", "v", "r", "s"].map((v) => [`d${v}`, { value: r`\,d${v}`, after: DIFFERENTIAL_AFTER }]),
+  ["x", "y", "z", "t", "u", "v", "r", "s"].map((v) => [`d${v}`, { value: r`\,\mathrm{d}${v}`, after: DIFFERENTIAL_AFTER }]),
 );
 
 const GREEK_LOWER: [string, string][] = [
@@ -76,10 +76,10 @@ export const PALETTES: PaletteGroup[] = [
   {
     id: "analysis", label: "Analysis", icon: "∫",
     keys: [
-      sym("∫", r`\int #0\,dx`, "Unbestimmtes Integral"),
-      sym("∫ₐᵇ", r`\int_{#?}^{#?} #0\,dx`, "Bestimmtes Integral"),
-      sym("∬", r`\iint_{#?} #0\,dA`, "Doppelintegral"),
-      sym("∮", r`\oint_{#?} #0\,ds`, "Kurvenintegral"),
+      sym("∫", r`\int #0\,\mathrm{d}x`, "Unbestimmtes Integral"),
+      sym("∫ₐᵇ", r`\int_{#?}^{#?} #0\,\mathrm{d}x`, "Bestimmtes Integral"),
+      sym("∬", r`\iint_{#?} #0\,\mathrm{d}A`, "Doppelintegral"),
+      sym("∮", r`\oint_{#?} #0\,\mathrm{d}s`, "Kurvenintegral"),
       sym("∑", r`\sum_{#?}^{#?} #0`, "Summe"),
       sym("∏", r`\prod_{#?}^{#?} #0`, "Produkt"),
       sym("lim", r`\lim_{#? \to #?} #0`, "Grenzwert"),

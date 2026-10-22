@@ -44,8 +44,8 @@ test("Freie Matrizen: Umgebung als latex", () => {
 });
 
 test("Differential-Kürzel: dx & Co. mit halbem Abstand, nur hinter einem Integranden", () => {
-  assert.deepEqual(DIFFERENTIAL_SHORTCUTS.dx, { value: String.raw`\,dx`, after: "letter+digit+frac+surd+closefence+array" });
-  assert.equal(DIFFERENTIAL_SHORTCUTS.dt.value, String.raw`\,dt`);
+  assert.deepEqual(DIFFERENTIAL_SHORTCUTS.dx, { value: String.raw`\,\mathrm{d}x`, after: "letter+digit+frac+surd+closefence+array" });
+  assert.equal(DIFFERENTIAL_SHORTCUTS.dt.value, String.raw`\,\mathrm{d}t`);
   for (const s of Object.values(DIFFERENTIAL_SHORTCUTS)) {
     assert.doesNotMatch(s.after, /nothing|operator|openfence|relop|binop|space/);
     assert.equal(mathLiveToCas(String.raw`\int x^2` + s.value), String.raw`\int x^2` + s.value);

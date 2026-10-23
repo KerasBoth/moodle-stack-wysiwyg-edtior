@@ -3,7 +3,7 @@
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toMaxima } from "@/lib/maxima/print";
-import { CASTEXT_BLOCKS } from "@/lib/stack/docs";
+import { CASTEXT_BLOCKS, casTextBlockText } from "@/lib/stack/docs";
 import type { TextField } from "@/lib/stack/model";
 import type { SectionProps } from "../App";
 import { CasTextEditor, MaximaEditor, XmlViewer, insertSnippet } from "../editors/CodeEditors";
@@ -246,7 +246,7 @@ function CasToolbar({ view, lead, end }: { view: React.RefObject<EditorView | nu
           {(close) => (
             <>
               <div className="tmenu-head">{t("sections.text.insertBlock")}</div>
-              {CASTEXT_BLOCKS.map((b) => (
+              {CASTEXT_BLOCKS.map((block) => casTextBlockText(block, t)).map((b) => (
                 <button key={b.label} type="button" role="menuitem" className="tmenu-item" title={b.info} onMouseDown={(e) => e.preventDefault()}
                   onClick={() => { ins(b.insert.replace(/\$\{\}/, "|").replace(/\$\{([^}]*)\}/g, "$1")); close(); }}>
                   <span className="tok tok-block">{b.label}</span>

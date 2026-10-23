@@ -7,7 +7,7 @@ import type { Extension } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, MatchDecorator, ViewPlugin, type ViewUpdate, WidgetType, hoverTooltip } from "@codemirror/view";
 import { parseExpression, MaximaSyntaxError } from "../maxima/parser.ts";
 import { parseCasText } from "../stack/castext.ts";
-import { CASTEXT_BLOCKS } from "../stack/docs.ts";
+import { CASTEXT_BLOCKS, casTextBlockText } from "../stack/docs.ts";
 import type { MessageKey } from "../i18n/index.ts";
 import { editorContext } from "./context.ts";
 import { maximaCompletionSource, maximaHoverContent, signatureHelp, trackFocus, wordAt } from "./maxima.ts";
@@ -96,7 +96,8 @@ function placeholderCompletions(): Completion[] {
     out.push({ label: `[[input:${i}]] [[validation:${i}]]`, type: "property", detail: t("lib.editor.cas.inputAndValidation"), boost: 4 });
   }
   for (const p of prts) out.push({ label: `[[feedback:${p}]]`, type: "property", detail: t("lib.editor.cas.prtFeedback"), boost: 2 });
-  for (const b of CASTEXT_BLOCKS) {
+  for (const block of CASTEXT_BLOCKS) {
+    const b = casTextBlockText(block, t);
     out.push(snippetCompletion(b.insert, { label: b.label, type: "keyword", detail: b.detail, info: b.info }));
   }
   out.push({ label: "[[/if]]", type: "keyword", detail: t("lib.editor.cas.endIf") });

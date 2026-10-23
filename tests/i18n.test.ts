@@ -2,11 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  LOCALES, LocalizedError, type Locale, formatDate, formatDateTime, negotiateLocale, parseLocale, translateWith,
+  LOCALES, LocalizedError, type Locale, type MessageKey, type Msg, type Params, formatDate, formatDateTime,
+  negotiateLocale, parseLocale, translateWith,
 } from "../lib/i18n/index.ts";
 import { translate, translateMsg } from "../lib/i18n/translate.ts";
 import { MESSAGES } from "../lib/i18n/messages/index.ts";
 import { StoreError } from "../lib/server/store.ts";
+import {
+  CASTEXT_BLOCKS, CATEGORIES, DOC_BY_NAME, FUNCTION_DOCS, STACK_JXG_DOCS, casTextBlockText, categoryLabel, docKey, docText,
+} from "../lib/stack/docs.ts";
+import { ANSWER_TESTS, answerTestText } from "../lib/stack/answertests.ts";
 
 test("negotiateLocale: Cookie vor Accept-Language, sonst Deutsch", () => {
   assert.equal(negotiateLocale("fr", "de"), "fr");
@@ -175,4 +180,80 @@ test("StoreError: Schlüssel, deutsche .message, Status und Zusatzfelder", () =>
   assert.deepEqual(e.extra, { exists: true });
   assert.equal(translate("fr", e.msg.key, e.msg.params), "a.xml existe déjà");
   assert.equal(new StoreError("server.invalidRequest").status, 400);
+});
+
+// ---- Funktionsreferenz und Antworttests (Task 8)
+
+const translatorFor = (l: Locale) => (key: MessageKey | Msg, params?: Params) =>
+  typeof key === "string" ? translate(l, key, params) : translateMsg(l, key);
+
+test("Referenz: jede Funktion hat in jeder Sprache Beschreibung, Rückgabe und Kategorie", () => {
+  const de = MESSAGES.de.reference;
+  const docs = [...FUNCTION_DOCS, ...STACK_JXG_DOCS];
+  // Schlüssel und Einträge passen genau zueinander (keine verwaisten Texte)
+  assert.deepEqual(Object.keys(de.fn).sort(), docs.map((d) => docKey(d.name)).sort());
+  assert.deepEqual(Object.keys(de.cat).sort(), [...CATEGORIES].sort());
+  // „other“ würde den Bereich zum Plural machen
+  for (const obj of [de.fn, de.cat, de.returns, de.casText, de.answerTests]) assert.ok(!("other" in obj));
+  for (const l of LOCALES) {
+    const t = translatorFor(l);
+    for (const doc of docs) {
+      const x = docText(doc, t);
+      assert.ok(x.desc.trim() && !x.desc.startsWith("reference."), `${l}: ${doc.name} desc`);
+      assert.ok(x.returns.trim() && !x.returns.startsWith("reference."), `${l}: ${doc.name} returns`);
+      assert.ok(x.cat.trim() && !x.cat.startsWith("reference."), `${l}: ${doc.name} cat`);
+    }
+    for (const c of CATEGORIES) assert.ok(!categoryLabel(c, t).startsWith("reference."), `${l}: ${c}`);
+  }
+  // Fremdsprachen weichen vom Deutschen ab (Rauchtest, dass wirklich übersetzt wurde)
+  for (const l of LOCALES.filter((x) => x !== "de")) {
+    assert.notEqual(docText(DOC_BY_NAME.get("rand")!, translatorFor(l)).desc, docText(DOC_BY_NAME.get("rand")!, translatorFor("de")).desc, l);
+  }
+});
+
+test("Referenz: Beispiele haben in allen Sprachen denselben Code-Anteil", () => {
+  const codePart = (ex: string) => ex.split("\n").map((line) => line.split("→")[0]);
+  for (const doc of [...FUNCTION_DOCS, ...STACK_JXG_DOCS]) {
+    const de = docText(doc, translatorFor("de")).example;
+    assert.equal(de === undefined, doc.example === undefined, doc.name);
+    if (de === undefined) continue;
+    assert.ok(!/\{(eg|except|internalOrder)\}/.test(de), `${doc.name}: Platzhalter übrig: ${de}`);
+    for (const l of LOCALES) {
+      const ex = docText(doc, translatorFor(l)).example!;
+      assert.deepEqual(codePart(ex), codePart(de), `${l}: ${doc.name}`);
+    }
+  }
+  assert.ok(docText(DOC_BY_NAME.get("rand")!, translatorFor("en")).example!.includes("e.g."));
+});
+
+test("Referenz: CASText-Blöcke übersetzt, Code der Vorlage bleibt", () => {
+  for (const l of LOCALES) {
+    const t = translatorFor(l);
+    for (const b of CASTEXT_BLOCKS) {
+      const x = casTextBlockText(b, t);
+      assert.ok(x.detail.trim() && !x.detail.startsWith("reference."), `${l}: ${b.label} detail`);
+      assert.ok(x.info.trim() && !x.info.startsWith("reference."), `${l}: ${b.label} info`);
+      assert.ok(!x.insert.includes("${@") && !x.insert.includes("lib.editor."), `${l}: ${x.insert}`);
+      assert.equal(x.label, b.label);
+    }
+    assert.ok(!t("reference.casTextHelp").startsWith("reference."), l);
+  }
+  const ifBlock = CASTEXT_BLOCKS.find((b) => b.label.startsWith("[[if"))!;
+  assert.equal(casTextBlockText(ifBlock, translatorFor("en")).insert, '[[if test="${condition}"]]\n${}\n[[else]]\n\n[[/if]]');
+});
+
+test("Antworttests: Label und Beschreibung in jeder Sprache, Name unverändert", () => {
+  assert.deepEqual(Object.keys(MESSAGES.de.reference.answerTests).sort(), ANSWER_TESTS.map((a) => a.name).sort());
+  for (const l of LOCALES) {
+    const t = translatorFor(l);
+    for (const a of ANSWER_TESTS) {
+      const x = answerTestText(a, t);
+      assert.ok(x.label.startsWith(`${a.name} – `) && x.label.length > a.name.length + 3, `${l}: ${x.label}`);
+      assert.ok(!x.label.includes("reference."), `${l}: ${x.label}`);
+      assert.ok(x.description.trim() && !x.description.startsWith("reference."), `${l}: ${a.name}`);
+      assert.equal(x.optionHint === undefined, !a.needsOptions, `${l}: ${a.name} optionHint`);
+      if (x.optionHint !== undefined) assert.ok(!x.optionHint.startsWith("reference."), `${l}: ${a.name}`);
+    }
+  }
+  assert.equal(answerTestText(ANSWER_TESTS[0], translatorFor("en")).label, "AlgEquiv – algebraically equivalent");
 });

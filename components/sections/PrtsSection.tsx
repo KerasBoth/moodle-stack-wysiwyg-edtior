@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ANSWER_TESTS } from "@/lib/stack/answertests";
+import { ANSWER_TESTS, answerTestText } from "@/lib/stack/answertests";
 import { type Prt, type StackQuestion, defaultNode, defaultPrt } from "@/lib/stack/model";
 import { usedInputs } from "@/lib/stack/preview";
 import type { SectionProps } from "../App";
@@ -171,7 +171,8 @@ export default function PrtsSection({ q, update, build }: SectionProps) {
               {p.nodes.map((n, ni) => {
                 const nf = n.fields;
                 const setN = (k: string, v: string) => setP((x) => { x.nodes[ni].fields[k] = v; });
-                const at = ANSWER_TESTS.find((t) => t.name === nf.answertest);
+                const atInfo = ANSWER_TESTS.find((a) => a.name === nf.answertest);
+                const at = atInfo && { ...atInfo, ...answerTestText(atInfo, t) };
                 const others: [string, string][] = [["-1", t("sections.prts.end")], ...p.nodes.filter((_, j) => j !== ni).map((o) => [o.fields.name, t("sections.prts.node", { n: Number(o.fields.name) + 1 })] as [string, string])];
                 return (
                   <div className="node" key={ni} id={`node-${p.name}-${ni}`}>

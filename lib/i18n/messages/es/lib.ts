@@ -173,6 +173,9 @@ export default {
       expression: "expresion",
       local: "local",
       value: "valor{n}",
+      list: "lista",
+      hint: "Pista",
+      langCode: "es",
     },
     cas: {
       inputField: "Campo de respuesta",

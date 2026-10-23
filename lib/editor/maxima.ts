@@ -8,8 +8,8 @@ import { type Diagnostic, linter } from "@codemirror/lint";
 import { type EditorState, type Extension, StateField } from "@codemirror/state";
 import { EditorView, type Tooltip, hoverTooltip, showTooltip } from "@codemirror/view";
 import { parseExpression, parseStatements, MaximaSyntaxError } from "../maxima/parser.ts";
-import { DOC_BY_NAME, FUNCTION_DOCS, type FnDoc, MAXIMA_KEYWORDS } from "../stack/docs.ts";
-import type { Msg } from "../i18n/index.ts";
+import { DOC_BY_NAME, FUNCTION_DOCS, type FnDoc, MAXIMA_KEYWORDS, categoryLabel, docText } from "../stack/docs.ts";
+import type { Msg, Translator } from "../i18n/index.ts";
 import { editorContext } from "./context.ts";
 
 // ---- Syntaxhervorhebung ---------------------------------------------------------
@@ -65,6 +65,7 @@ export const maximaLanguage = StreamLanguage.define<MState>({
 // ---- Dokumentations-Darstellung -------------------------------------------------------
 
 export function renderDoc(doc: FnDoc): HTMLElement {
+  const text = docText(doc, editorContext.t);
   const el = document.createElement("div");
   el.className = "cm-stack-doc";
   const sig = document.createElement("div");
@@ -73,18 +74,18 @@ export function renderDoc(doc: FnDoc): HTMLElement {
   el.appendChild(sig);
   const desc = document.createElement("div");
   desc.className = "cm-stack-doc-desc";
-  desc.textContent = doc.desc;
+  desc.textContent = text.desc;
   el.appendChild(desc);
   const ret = document.createElement("div");
   ret.className = "cm-stack-doc-ret";
   const label = document.createElement("b");
   label.textContent = editorContext.t("lib.editor.returns");
-  ret.append(label, " ", doc.returns);
+  ret.append(label, " ", text.returns);
   el.appendChild(ret);
-  if (doc.example) {
+  if (text.example) {
     const ex = document.createElement("pre");
     ex.className = "cm-stack-doc-ex";
-    ex.textContent = doc.example;
+    ex.textContent = text.example;
     el.appendChild(ex);
   }
   return el;
@@ -141,17 +142,18 @@ function variableCompletions(): Completion[] {
   return out;
 }
 
-function docCompletions(): Completion[] {
+function docCompletions(t: Translator): Completion[] {
   return FUNCTION_DOCS.map((doc) => ({
     label: doc.name,
-    type: doc.cat === "Konstanten" ? "constant" : doc.cat === "Steuerung" ? "keyword" : "function",
-    detail: doc.sig.length > 46 ? doc.cat : doc.sig,
+    type: doc.cat === "constants" ? "constant" : doc.cat === "control" ? "keyword" : "function",
+    detail: doc.sig.length > 46 ? categoryLabel(doc.cat, t) : doc.sig,
     info: () => renderDoc(doc),
-    apply: doc.cat === "Konstanten" || doc.cat === "Steuerung" || doc.name === "simp" ? doc.name : `${doc.name}(`,
+    apply: doc.cat === "constants" || doc.cat === "control" || doc.name === "simp" ? doc.name : `${doc.name}(`,
   }));
 }
 
-let cachedDocs: Completion[] | null = null;
+// Zwischenspeicher je Übersetzer: nach einem Sprachwechsel neu aufbauen
+let cachedDocs: { t: Translator; options: Completion[] } | null = null;
 
 /** Vervollständigt Maxima-Bezeichner. `inCasText` begrenzt auf Bereiche innerhalb {@ @}/{# #}. */
 export function maximaCompletionSource(ctx: CompletionContext): CompletionResult | null {
@@ -161,10 +163,11 @@ export function maximaCompletionSource(ctx: CompletionContext): CompletionResult
   const line = ctx.state.doc.lineAt(ctx.pos);
   const before = line.text.slice(0, ctx.pos - line.from);
   if ((before.match(/"/g)?.length ?? 0) % 2 === 1) return null;
-  cachedDocs ??= docCompletions();
+  const t = editorContext.t;
+  if (cachedDocs?.t !== t) cachedDocs = { t, options: docCompletions(t) };
   return {
     from: word ? word.from : ctx.pos,
-    options: [...variableCompletions(), ...cachedDocs, ...functionSnippets()],
+    options: [...variableCompletions(), ...cachedDocs.options, ...functionSnippets()],
     validFor: /^[A-Za-z0-9_%]*$/,
   };
 }
@@ -233,7 +236,7 @@ export function findCallContext(text: string, pos: number): { name: string; argI
 }
 
 function splitSigParams(sig: string): { head: string; params: string[]; tail: string } | null {
-  const first = sig.split(/\s{2,}bzw\.|\s+\|\s+/)[0];
+  const first = sig.split(/\s+\|\s+/)[0];
   const open = first.indexOf("(");
   const close = first.lastIndexOf(")");
   if (open < 0 || close < open) return null;
@@ -278,7 +281,7 @@ function signatureTooltip(state: EditorState): Tooltip | null {
       }
       const ret = document.createElement("span");
       ret.className = "cm-stack-sighelp-ret";
-      ret.textContent = `  → ${doc.returns}`;
+      ret.textContent = `  → ${docText(doc, editorContext.t).returns}`;
       dom.appendChild(ret);
       return { dom };
     },

@@ -173,6 +173,9 @@ export default {
       expression: "expression",
       local: "local",
       value: "value{n}",
+      list: "list",
+      hint: "Hint",
+      langCode: "en",
     },
     cas: {
       inputField: "Input field",

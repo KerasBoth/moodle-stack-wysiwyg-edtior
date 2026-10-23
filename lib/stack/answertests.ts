@@ -5,7 +5,7 @@ import { diff, expand, freeSymbols, numericValue, truth } from "../maxima/eval.t
 import { equal, key, simplify } from "../maxima/simp.ts";
 import { toMaxima } from "../maxima/print.ts";
 import { type Expr, isNumeric, isRelation, numValue } from "../maxima/types.ts";
-import { type Msg, errorMsg } from "../i18n/index.ts";
+import { type MessageKey, type Msg, type Translator, errorMsg } from "../i18n/index.ts";
 
 export interface AnswerTestResult {
   result: boolean;
@@ -152,51 +152,62 @@ function countSigFigs(s: string): number {
   return t.replace(/^0+/, "").length;
 }
 
+// Kurzbeschreibung, Beschreibung und Hinweis zur Testoption liegen unter `reference.answerTests.<name>`
+// in lib/i18n/messages; `name` geht unverändert ins XML.
 export interface AnswerTestInfo {
   name: string;
-  label: string;
   needsOptions: boolean;
-  optionHint?: string;
-  description: string;
 }
 
+const at = (name: string, needsOptions = false): AnswerTestInfo => ({ name, needsOptions });
+
 export const ANSWER_TESTS: AnswerTestInfo[] = [
-  { name: "AlgEquiv", label: "AlgEquiv – algebraisch äquivalent", needsOptions: false, description: "Prüft, ob sa und ta algebraisch äquivalent sind (z. B. (x+1)^2 und x^2+2*x+1). Funktioniert für Ausdrücke, Gleichungen, Ungleichungen, Listen, Mengen und Matrizen." },
-  { name: "AlgEquivNouns", label: "AlgEquivNouns – äquivalent, Nomenformen bleiben", needsOptions: false, description: "Wie AlgEquiv, aber nicht ausgewertete Operatoren (z. B. 'diff) werden nicht ausgeführt." },
-  { name: "CasEqual", label: "CasEqual – identisch im CAS", needsOptions: false, description: "Prüft, ob die Ausdrücke im CAS (ohne weitere Vereinfachung) identisch sind." },
-  { name: "SameType", label: "SameType – gleicher Typ", needsOptions: false, description: "Prüft, ob beide Ausdrücke denselben Typ haben (Liste, Menge, Gleichung, Matrix …)." },
-  { name: "SubstEquiv", label: "SubstEquiv – äquivalent bis auf Variablentausch", needsOptions: false, description: "Äquivalent bis auf Umbenennung der Variablen." },
-  { name: "SysEquiv", label: "SysEquiv – Gleichungssysteme", needsOptions: false, description: "Vergleicht Listen von Polynomgleichungen auf gleiche Lösungsmengen." },
-  { name: "Sets", label: "Sets – Mengenvergleich", needsOptions: false, description: "Vergleicht zwei Mengen und gibt Rückmeldung zu fehlenden/überzähligen Elementen." },
-  { name: "EqualComAss", label: "EqualComAss – gleich bis auf Kommutativ-/Assoziativgesetz", needsOptions: false, description: "Gleich, wenn nur Kommutativ- und Assoziativgesetz angewendet werden. Prüft z. B. ob vereinfacht wurde." },
-  { name: "EqualComAssRules", label: "EqualComAssRules – mit Zusatzregeln", needsOptions: true, optionHint: "Liste von Regeln, z. B. [ID_TRANS]", description: "Wie EqualComAss, mit zusätzlichen Termersetzungsregeln." },
-  { name: "Expanded", label: "Expanded – ausmultipliziert", needsOptions: false, description: "Prüft, ob sa ausmultipliziert ist (ta wird ignoriert)." },
-  { name: "FacForm", label: "FacForm – faktorisiert", needsOptions: true, optionHint: "Variable, z. B. x", description: "Prüft, ob sa äquivalent zu ta und faktorisiert ist." },
-  { name: "PartFrac", label: "PartFrac – Partialbruchzerlegung", needsOptions: true, optionHint: "Variable, z. B. x", description: "Prüft, ob sa eine Partialbruchzerlegung von ta ist." },
-  { name: "CompSquare", label: "CompSquare – quadratische Ergänzung", needsOptions: true, optionHint: "Variable, z. B. x", description: "Prüft, ob sa in Scheitelpunktform vorliegt und äquivalent zu ta ist." },
-  { name: "LowestTerms", label: "LowestTerms – gekürzt", needsOptions: false, description: "Prüft, ob alle Brüche in sa vollständig gekürzt sind." },
-  { name: "Diff", label: "Diff – Ableitung", needsOptions: true, optionHint: "Variable, z. B. x", description: "Prüft, ob sa die Ableitung ta ist (Äquivalenz)." },
-  { name: "Int", label: "Int – Stammfunktion", needsOptions: true, optionHint: "Variable, z. B. x", description: "Prüft, ob sa eine Stammfunktion ist: diff(sa,x) = diff(ta,x). Konstante +c wird geprüft." },
-  { name: "GT", label: "GT – größer als", needsOptions: false, description: "Numerisch: sa > ta." },
-  { name: "GTE", label: "GTE – größer oder gleich", needsOptions: false, description: "Numerisch: sa ≥ ta." },
-  { name: "NumAbsolute", label: "NumAbsolute – absolute Toleranz", needsOptions: true, optionHint: "Toleranz, z. B. 0.05", description: "Numerisch: |sa − ta| ≤ Toleranz (Standard 0.05)." },
-  { name: "NumRelative", label: "NumRelative – relative Toleranz", needsOptions: true, optionHint: "Toleranz, z. B. 0.05", description: "Numerisch: |sa − ta| ≤ Toleranz·|ta| (Standard 0.05)." },
-  { name: "NumSigFigs", label: "NumSigFigs – signifikante Stellen", needsOptions: true, optionHint: "Anzahl, z. B. 3 oder [3,2]", description: "Prüft Anzahl signifikanter Stellen und Übereinstimmung mit ta." },
-  { name: "NumDecPlaces", label: "NumDecPlaces – Nachkommastellen", needsOptions: true, optionHint: "Anzahl, z. B. 2", description: "Prüft, ob sa genau die angegebenen Nachkommastellen hat und mit ta übereinstimmt." },
-  { name: "NumDecPlacesWrong", label: "NumDecPlacesWrong – Stellen falsch", needsOptions: true, optionHint: "Anzahl", description: "Erkennt Zahlen mit vertauschten/falschen Ziffern." },
-  { name: "SigFigsStrict", label: "SigFigsStrict – exakt n sign. Stellen", needsOptions: true, optionHint: "Anzahl", description: "Prüft nur, ob sa genau n signifikante Stellen hat." },
-  { name: "Units", label: "Units – Einheiten", needsOptions: true, optionHint: "sig. Stellen", description: "Vergleicht Zahlen mit Einheiten (stackunits)." },
-  { name: "UnitsStrict", label: "UnitsStrict – Einheiten exakt", needsOptions: true, optionHint: "sig. Stellen", description: "Wie Units, ohne Umrechnung von Einheiten." },
-  { name: "UnitsAbsolute", label: "UnitsAbsolute", needsOptions: true, optionHint: "Toleranz", description: "Einheiten mit absoluter Toleranz." },
-  { name: "UnitsRelative", label: "UnitsRelative", needsOptions: true, optionHint: "Toleranz", description: "Einheiten mit relativer Toleranz." },
-  { name: "String", label: "String – exakter Textvergleich", needsOptions: false, description: "Textvergleich der Zeichenketten (Groß-/Kleinschreibung relevant)." },
-  { name: "StringSloppy", label: "StringSloppy – toleranter Textvergleich", needsOptions: false, description: "Textvergleich ohne Leerzeichen und Groß-/Kleinschreibung." },
-  { name: "SRegExp", label: "SRegExp – regulärer Ausdruck", needsOptions: false, description: "ta ist ein regulärer Ausdruck (als String), der auf sa passen muss." },
-  { name: "Levenshtein", label: "Levenshtein – Ähnlichkeit", needsOptions: true, optionHint: "Ähnlichkeit 0..1", description: "Ähnlichkeit von Zeichenketten über die Levenshtein-Distanz." },
-  { name: "Validator", label: "Validator – eigene Prüffunktion", needsOptions: true, optionHint: "Funktionsname", description: "Ruft eine eigene Maxima-Funktion zur Prüfung auf." },
-  { name: "Equiv", label: "Equiv – Äquivalenzumformungen", needsOptions: false, description: "Prüft eine Kette von Äquivalenzumformungen (Eingabetyp equiv)." },
-  { name: "EquivFirst", label: "EquivFirst – Umformungen, erste Zeile", needsOptions: false, description: "Wie Equiv, die erste Zeile muss mit ta übereinstimmen." },
+  at("AlgEquiv"),
+  at("AlgEquivNouns"),
+  at("CasEqual"),
+  at("SameType"),
+  at("SubstEquiv"),
+  at("SysEquiv"),
+  at("Sets"),
+  at("EqualComAss"),
+  at("EqualComAssRules", true),
+  at("Expanded"),
+  at("FacForm", true),
+  at("PartFrac", true),
+  at("CompSquare", true),
+  at("LowestTerms"),
+  at("Diff", true),
+  at("Int", true),
+  at("GT"),
+  at("GTE"),
+  at("NumAbsolute", true),
+  at("NumRelative", true),
+  at("NumSigFigs", true),
+  at("NumDecPlaces", true),
+  at("NumDecPlacesWrong", true),
+  at("SigFigsStrict", true),
+  at("Units", true),
+  at("UnitsStrict", true),
+  at("UnitsAbsolute", true),
+  at("UnitsRelative", true),
+  at("String"),
+  at("StringSloppy"),
+  at("SRegExp"),
+  at("Levenshtein", true),
+  at("Validator", true),
+  at("Equiv"),
+  at("EquivFirst"),
 ];
+
+/** Beschriftung („Name – Kurzbeschreibung“), Beschreibung und Hinweis zur Testoption in der Sprache von `t`. */
+export function answerTestText(a: AnswerTestInfo, t: Translator): { label: string; description: string; optionHint?: string } {
+  const k = `reference.answerTests.${a.name}` as const;
+  return {
+    label: `${a.name} – ${t(`${k}.short` as MessageKey)}`,
+    description: t(`${k}.description` as MessageKey),
+    optionHint: a.needsOptions ? t(`${k}.optionHint` as MessageKey) : undefined,
+  };
+}
 
 function levenshtein(a: string, b: string): number {
   const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);

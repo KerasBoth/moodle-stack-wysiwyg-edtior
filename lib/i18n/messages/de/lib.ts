@@ -177,6 +177,9 @@ export default {
       expression: "ausdruck",
       local: "lokal",
       value: "wert{n}",
+      list: "liste",
+      hint: "Hinweis",
+      langCode: "de",
     },
     cas: {
       inputField: "Eingabefeld",

@@ -174,6 +174,9 @@ export default {
       expression: "expression",
       local: "local",
       value: "valeur{n}",
+      list: "liste",
+      hint: "Indice",
+      langCode: "fr",
     },
     cas: {
       inputField: "Champ de réponse",

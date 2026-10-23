@@ -173,6 +173,9 @@ export default {
       expression: "vyraz",
       local: "lokalna",
       value: "hodnota{n}",
+      list: "zoznam",
+      hint: "Nápoveda",
+      langCode: "sk",
     },
     cas: {
       inputField: "Vstupné pole",

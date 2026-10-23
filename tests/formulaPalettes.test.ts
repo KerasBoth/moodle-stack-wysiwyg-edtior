@@ -2,12 +2,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DIFFERENTIAL_SHORTCUTS, PALETTES, matrixLatex } from "../components/editors/formulaPalettes.ts";
 import { casToMathLive, mathLiveToCas } from "../lib/editor/formula.ts";
+import { LOCALES, type Msg, translateWith } from "../lib/i18n/index.ts";
+import { MESSAGES } from "../lib/i18n/messages/index.ts";
 
 test("Gruppen in der Reihenfolge der Spec", () => {
   assert.deepEqual(PALETTES.map((g) => g.label), [
-    "Wurzeln & Brüche", "Analysis", "Matrizen & Vektoren", "Griechisch", "Logik & Mengen", "Funktionen", "Relationen", "Maxima",
+    "formula.groups.roots", "formula.groups.analysis", "formula.groups.matrix", "formula.groups.greek",
+    "formula.groups.logic", "formula.groups.functions", "formula.groups.relations", "formula.groups.maxima",
   ]);
   assert.equal(new Set(PALETTES.map((g) => g.id)).size, PALETTES.length);
+});
+
+test("Beschriftungen und Tooltips: Schlüssel existieren in allen Sprachen", () => {
+  const msgs = PALETTES.flatMap((g) => [{ key: g.label }, ...g.keys.flatMap((k) => [k.label, k.title])])
+    .filter((v): v is Msg => typeof v !== "string");
+  assert.ok(msgs.length > 80);
+  for (const locale of LOCALES) {
+    for (const m of msgs) assert.notEqual(translateWith(MESSAGES, locale, m.key), m.key, `${locale}: ${m.key}`);
+  }
 });
 
 test("matrixLatex: #0 zuerst, sonst #?", () => {

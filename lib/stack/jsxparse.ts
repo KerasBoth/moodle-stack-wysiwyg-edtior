@@ -4,17 +4,22 @@
 
 import { parse } from "acorn";
 import type * as ESTree from "estree";
+import type { Msg } from "../i18n/index.ts";
 import {
   type JsxElement, type JsxModel, TermError, generateJsx, newModel, termToJs,
 } from "./jsxbuilder.ts";
 
+/** Hinweis für den Dialog; `cause` wird (übersetzt) als Platzhalter {error} eingesetzt. */
+export type ParseNote = Msg & { cause?: Msg };
+
 export type ParseResult =
-  | { ok: true; model: JsxModel; /** Anzahl der als eigener Code übernommenen Abschnitte */ custom: number; /** Hinweis für den Dialog */ note?: string }
-  | { ok: false; error: string };
+  | { ok: true; model: JsxModel; /** Anzahl der als eigener Code übernommenen Abschnitte */ custom: number; /** Hinweis für den Dialog */ note?: ParseNote }
+  | { ok: false; error: Msg };
 
 type Node = ESTree.Node & { start: number; end: number };
 
 const MARKER_RE = /\/\*\s*stack-editor:jsx\s+[A-Za-z0-9+/=]+\s*\*\/\s*/g;
+// Inhalt (ins XML), nicht übersetzen – Wortlaut des von jsxbuilder.ts erzeugten Kommentars
 const GENERATED_COMMENT = /^\s*\/\/ Verknüpfung mit den Eingabefeldern\s*$/gm;
 
 let idCounter = 0;
@@ -27,6 +32,7 @@ const MATH_TO_TERM: Record<string, string> = {
   sqrt: "sqrt", exp: "exp", log: "log", abs: "abs", floor: "floor", ceil: "ceiling", round: "round", sign: "signum", min: "min", max: "max",
 };
 
+// Nur intern: führt dazu, dass ein Abschnitt als eigener Code übernommen wird; der Text wird nie angezeigt.
 class Unsupported extends Error {}
 
 interface TermCtx {
@@ -259,7 +265,7 @@ function fromTo(n: ESTree.Node, ctx: TermCtx, inf: string): string {
 export function parseJsxBlock(block: string): ParseResult {
   const head = /^\s*\[\[\s*jsxgraph\b([^\]]*)\]\]/.exec(block);
   const tail = /\[\[\s*\/jsxgraph\s*\]\]\s*$/.exec(block);
-  if (!head || !tail) return { ok: false, error: "Kein [[jsxgraph]]-Block" };
+  if (!head || !tail) return { ok: false, error: { key: "jsx.parse.noBlock" } };
   const body = block.slice(head[0].length, tail.index).replace(MARKER_RE, "").replace(GENERATED_COMMENT, "");
 
   const model = newModel();
@@ -281,7 +287,7 @@ export function parseJsxBlock(block: string): ParseResult {
   const restore = (s: string) => s.replace(/__cas(\d+)__ */g, (_, i: string) => cas[Number(i)]);
 
   // Rückfall: der ganze Code bleibt als eigener Code – die Grafik lässt sich trotzdem öffnen und erhalten
-  const wholeAsCode = (note: string): ParseResult => {
+  const wholeAsCode = (note: ParseNote): ParseResult => {
     const m = newModel();
     m.width = model.width;
     m.height = model.height;
@@ -298,7 +304,7 @@ export function parseJsxBlock(block: string): ParseResult {
   try {
     program = parse(js, { ecmaVersion: "latest", sourceType: "script", allowReturnOutsideFunction: true }) as unknown as ESTree.Program;
   } catch (e) {
-    return wholeAsCode(`Der JavaScript-Code ließ sich nicht analysieren (${e instanceof Error ? e.message : e}) und bleibt vollständig als „Eigener Code“ erhalten.`);
+    return wholeAsCode({ key: "jsx.parse.notAnalysable", params: { error: e instanceof Error ? e.message : String(e) } });
   }
 
   const ctx: TermCtx = { cas, sliders: new Set(), points: new Set() };
@@ -429,7 +435,7 @@ export function parseJsxBlock(block: string): ParseResult {
   flushCode();
 
   if (!boardFound) {
-    return wholeAsCode("Im Code wurde kein „JXG.JSXGraph.initBoard(divid, …)“ gefunden. Die Grafik bleibt vollständig als „Eigener Code“ erhalten.");
+    return wholeAsCode({ key: "jsx.parse.noBoard" });
   }
   model.boardVar = boardVar;
 
@@ -441,9 +447,7 @@ export function parseJsxBlock(block: string): ParseResult {
 
   // Abschließend: der erzeugte Code muss fehlerfrei sein – sonst sicherheitshalber alles als eigenen Code übernehmen
   const gen = generateJsx(model);
-  if (gen.errors.length) return wholeAsCode(`Teile der Grafik ließen sich nicht sicher abbilden (${gen.errors[0].message}). Sie bleibt vollständig als „Eigener Code“ erhalten.`);
-  const note = model.boardInCode
-    ? "Die Zeichenfläche wird im eigenen Code angelegt (ihre Optionen lassen sich nicht als Formular darstellen). Elemente können trotzdem ergänzt und bearbeitet werden."
-    : undefined;
+  if (gen.errors.length) return wholeAsCode({ key: "jsx.parse.notMappable", cause: gen.errors[0].msg });
+  const note: ParseNote | undefined = model.boardInCode ? { key: "jsx.parse.boardInCode" } : undefined;
   return { ok: true, model, custom, note };
 }

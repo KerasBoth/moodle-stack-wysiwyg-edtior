@@ -12,16 +12,24 @@ import { useDialogs } from "../Dialogs";
 import { Modal } from "../Modal";
 import { IconCode, IconDown } from "../icons";
 import { DIFFERENTIAL_SHORTCUTS, PALETTES, type PaletteGroup, type PaletteKey, matrixLatex } from "./formulaPalettes";
+import { useLocale, useT } from "../I18nProvider";
+import type { MessageKey, Msg } from "@/lib/i18n";
+import { withParts } from "./richText";
 
 /** Ergebnis von „Übernehmen“ (resolveApply ohne „undecodable“, das bleibt im Dialog). */
 export type FormulaApplyResult = { kind: "source"; source: string } | { kind: "empty" };
 
 type LastEdited = "none" | "field" | "code";
 
-const MSG_UNDECODABLE = "Die Formel enthält ein Maxima-Kästchen, das nicht sicher zurückübersetzt werden kann – bitte im LaTeX-Code prüfen.";
-const MSG_IN_BOX = "Im Maxima-Kästchen lassen sich keine Formel-Elemente einfügen. Bitte den Cursor zuerst aus dem Kästchen bewegen.";
-const MSG_NOT_IN_MATRIX = "Zeilen und Spalten lassen sich nur in einer Matrix einfügen oder entfernen. Bitte den Cursor zuerst in eine Matrix setzen.";
-const MSG_IN_TEXT = "Ein Maxima-Kästchen lässt sich nicht in Text einfügen. Bitte den Cursor zuerst in den Formelteil bewegen.";
+const MSG_UNDECODABLE: MessageKey = "formula.errors.undecodable";
+const MSG_IN_BOX: MessageKey = "formula.errors.inBox";
+const MSG_NOT_IN_MATRIX: MessageKey = "formula.errors.notInMatrix";
+const MSG_IN_TEXT: MessageKey = "formula.errors.inText";
+
+/** Beschriftung/Tooltip einer Taste: Symbol bleibt, Msg wird übersetzt. */
+function keyText(t: ReturnType<typeof useT>, v: string | Msg): string {
+  return typeof v === "string" ? v : t(v);
+}
 
 // ---- MathLive einmalig laden -------------------------------------------------------------------------
 
@@ -33,6 +41,7 @@ function loadMathLive(): Promise<MathLiveModule> {
       // Statische Einstellungen vor dem ersten <math-field>: offline, ohne Sounds
       m.MathfieldElement.fontsDirectory = "/vendor/mathlive/fonts";
       m.MathfieldElement.soundsDirectory = null;
+      // Sprache der Oberfläche: setzt FormulaEditor (beim Laden und bei jedem Sprachwechsel)
       return m;
     });
     mathLivePromise.catch(() => { mathLivePromise = null; }); // beim nächsten Öffnen erneut versuchen
@@ -180,6 +189,10 @@ function insertCasBox(mf: MathfieldElement, cas: string): void {
 
 export default function FormulaEditor({ initial, onApply, onClose }: { initial: Formula | null; onApply: (result: FormulaApplyResult) => void; onClose: () => void }) {
   const dialogs = useDialogs();
+  const t = useT();
+  const locale = useLocale();
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const [code, setCode] = useState(initial?.tex ?? "");
   const [kind, setKind] = useState<FormulaKind>(initial?.kind ?? "inline");
   // Code, den MathLive nicht darstellen kann (Kollisionsschutz, Kästchen in Text): nur im Codefeld bearbeiten
@@ -187,7 +200,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
   // Einmal nötig gewordenes Codefeld bleibt offen (sonst verschwindet es mitten im Tippen, sobald der Code darstellbar wird)
   const [showCode, setShowCode] = useState(fieldBlocked);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MessageKey | null>(null);
   const [fieldUnreadable, setFieldUnreadable] = useState(false);
   const [load, setLoad] = useState<"loading" | "ready" | "failed">("loading");
 
@@ -233,6 +246,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
     loadMathLive().then(({ MathfieldElement }) => {
       const host = hostRef.current;
       if (disposed || !host) return;
+      MathfieldElement.locale = localeRef.current;
       mf = new MathfieldElement();
       mf.mathVirtualKeyboardPolicy = "manual";
       host.appendChild(mf);
@@ -259,6 +273,12 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
       if (mfRef.current === mf) mfRef.current = null;
     };
   }, [syncFromField]);
+
+  // Sprachwechsel bei offenem Dialog: MathLive (Tooltips, Menüs, Sprachausgabe) mitziehen
+  useEffect(() => {
+    if (load !== "ready") return;
+    loadMathLive().then(({ MathfieldElement }) => { MathfieldElement.locale = locale; }, () => {});
+  }, [locale, load]);
 
   // Palette schließen, wenn außerhalb geklickt wird
   useEffect(() => {
@@ -294,10 +314,10 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
       insertCasBox(mf, key.latex);
     } else if (key.special === "matrix") {
       const size = await dialogs.form({
-        title: "Matrix einfügen",
-        fields: [{ name: "rows", label: "Zeilen", initial: "2" }, { name: "cols", label: "Spalten", initial: "2" }],
-        confirmLabel: "Einfügen",
-        validate: (v) => [v.rows, v.cols].every((x) => /^\s*\d+\s*$/.test(x) && +x >= 1 && +x <= 10) ? null : "Zeilen und Spalten: ganze Zahlen von 1 bis 10.",
+        title: t("formula.matrixDialog.title"),
+        fields: [{ name: "rows", label: t("formula.matrixDialog.rows"), initial: "2" }, { name: "cols", label: t("formula.matrixDialog.cols"), initial: "2" }],
+        confirmLabel: t("formula.matrixDialog.insert"),
+        validate: (v) => [v.rows, v.cols].every((x) => /^\s*\d+\s*$/.test(x) && +x >= 1 && +x <= 10) ? null : t("formula.matrixDialog.invalid"),
       });
       if (mfRef.current !== mf) return; // Dialog inzwischen geschlossen
       if (size) mf.insert(matrixLatex(key.latex, +size.rows, +size.cols), { format: "latex", mode: "math", selectionMode: "placeholder", focus: true });
@@ -341,15 +361,15 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
   const toolsDisabled = load !== "ready" || fieldBlocked;
 
   return (
-    <Modal className="formula-editor" wide title={initial ? "Formel bearbeiten" : "Formel einfügen"} onClose={handleClose}>
-      <div className="fe-toolbar" role="toolbar" aria-label="Formel-Elemente">
+    <Modal className="formula-editor" wide title={initial ? t("formula.editTitle") : t("formula.insertTitle")} onClose={handleClose}>
+      <div className="fe-toolbar" role="toolbar" aria-label={t("formula.toolbar")}>
         {PALETTES.map((g) => (
           <div className="fe-group" key={g.id}>
             <button
               type="button"
               ref={(el) => { if (el) groupBtns.current.set(g.id, el); else groupBtns.current.delete(g.id); }}
               className={`fe-gbtn${openGroup === g.id ? " on" : ""}`}
-              title={g.label}
+              title={t(g.label)}
               aria-haspopup="true"
               aria-expanded={openGroup === g.id}
               disabled={toolsDisabled}
@@ -357,7 +377,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
               onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setOpenGroup(g.id); } }}
             >
               <span className="fe-gicon">{g.icon}</span>
-              <span className="fe-glabel">{g.label}</span>
+              <span className="fe-glabel">{t(g.label)}</span>
               <IconDown />
             </button>
             {openGroup === g.id && <Palette group={g} onPick={pick} onLeave={() => closePalette(false)} />}
@@ -367,27 +387,31 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
 
       <div className="fe-field" hidden={fieldBlocked || load === "failed"}>
         <div className="fe-mf" ref={hostRef} />
-        {load === "loading" && <span className="fe-loading">Formel-Editor wird geladen …</span>}
+        {load === "loading" && <span className="fe-loading">{t("formula.loading")}</span>}
       </div>
       {fieldBlocked && (
-        <div className="issue info">Diese Formel kann nur als LaTeX-Code bearbeitet werden: Sie enthält <code>\texttt</code>, ein <code>\bbox</code> in Kästchenfarbe oder einen Maxima-Ausdruck in Text (z. B. in <code>\text{"{…}"}</code>).</div>
+        <div className="issue info">{withParts(t("formula.codeOnly"), {
+          texttt: <code>\texttt</code>,
+          bbox: <code>\bbox</code>,
+          text: <code>\text{"{…}"}</code>,
+        })}</div>
       )}
       {load === "failed" && !fieldBlocked && (
-        <div className="issue warning">Der Formel-Editor konnte nicht geladen werden. Die Formel lässt sich im LaTeX-Code bearbeiten.</div>
+        <div className="issue warning">{t("formula.loadFailed")}</div>
       )}
       {fieldUnreadable && !error && (
-        <div className="issue warning">Ein Maxima-Kästchen ist nicht sicher lesbar. Der LaTeX-Code zeigt den letzten gültigen Stand.</div>
+        <div className="issue warning">{t("formula.boxUnreadable")}</div>
       )}
 
       <div className="fe-coderow">
         <button type="button" className="btn small" aria-pressed={codeVisible} disabled={fieldBlocked || load === "failed"} onClick={() => setShowCode(!showCode)}>
-          <IconCode /> ‹/› LaTeX-Code
+          <IconCode /> ‹/› {t("formula.latexCode")}
         </button>
       </div>
       {codeVisible && (
         <textarea
           className="inp mono fe-code"
-          aria-label="LaTeX-Code"
+          aria-label={t("formula.latexCode")}
           rows={3}
           spellCheck={false}
           autoFocus={fieldBlocked || load === "failed"}
@@ -395,16 +419,16 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
           onChange={(e) => onCodeChange(e.target.value)}
         />
       )}
-      {error && <div className="issue error fe-error">{error}</div>}
+      {error && <div className="issue error fe-error">{t(error)}</div>}
 
       <div className="fe-foot">
-        <div className="fe-kind" role="group" aria-label="Art der Formel">
-          <button type="button" className="btn small" aria-pressed={kind === "inline"} onClick={() => setKind("inline")}>Inline {"\\( \\)"}</button>
-          <button type="button" className="btn small" aria-pressed={kind === "display"} onClick={() => setKind("display")}>Abgesetzt {"\\[ \\]"}</button>
+        <div className="fe-kind" role="group" aria-label={t("formula.kind")}>
+          <button type="button" className="btn small" aria-pressed={kind === "inline"} onClick={() => setKind("inline")}>{t("formula.inline")} {"\\( \\)"}</button>
+          <button type="button" className="btn small" aria-pressed={kind === "display"} onClick={() => setKind("display")}>{t("formula.display")} {"\\[ \\]"}</button>
         </div>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={onClose}>Abbrechen</button>
-        <button type="button" className="btn primary" onClick={apply}>Übernehmen</button>
+        <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
+        <button type="button" className="btn primary" onClick={apply}>{t("common.apply")}</button>
       </div>
     </Modal>
   );
@@ -414,6 +438,7 @@ export default function FormulaEditor({ initial, onApply, onClose }: { initial: 
 
 /** Tasten einer Gruppe als Raster; Pfeiltasten bewegen den Fokus, Enter/Leertaste wählen. */
 function Palette({ group, onPick, onLeave }: { group: PaletteGroup; onPick: (key: PaletteKey) => void; onLeave: () => void }) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const cols = group.keys.length > 24 ? 9 : 6;
 
@@ -440,7 +465,7 @@ function Palette({ group, onPick, onLeave }: { group: PaletteGroup; onPick: (key
       className="fe-palette"
       ref={ref}
       role="group"
-      aria-label={group.label}
+      aria-label={t(group.label)}
       style={{ gridTemplateColumns: `repeat(${Math.min(cols, group.keys.length)}, auto)` }}
       onKeyDown={onKeyDown}
       // Fokus verlässt die Palette (Tab): schließen. Ohne neues Fokusziel (Safari/Firefox auf macOS fokussieren
@@ -448,8 +473,8 @@ function Palette({ group, onPick, onLeave }: { group: PaletteGroup; onPick: (key
       onBlur={(e) => { if (e.relatedTarget instanceof Node && !e.currentTarget.parentElement?.contains(e.relatedTarget)) onLeave(); }}
     >
       {group.keys.map((k, i) => (
-        <button key={i} type="button" className={`fe-key${k.command ? " cmd" : ""}`} title={k.title} aria-label={k.title} onClick={() => onPick(k)}>
-          {k.label}
+        <button key={i} type="button" className={`fe-key${k.command ? " cmd" : ""}`} title={keyText(t, k.title)} aria-label={keyText(t, k.title)} onClick={() => onPick(k)}>
+          {keyText(t, k.label)}
         </button>
       ))}
     </div>

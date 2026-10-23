@@ -64,7 +64,7 @@ test("several objects on one input use bind_list_of; errors are reported", () =>
   q.name = "A";
   q.x = "foo";
   const bad = generateJsx(m);
-  assert.ok(bad.errors.some((e) => /mehrfach/.test(e.message)));
+  assert.ok(bad.errors.some((e) => e.msg.key === "jsx.errors.duplicateName" && e.msg.params?.name === "A"));
   assert.ok(bad.errors.some((e) => e.field === "x"));
 });
 

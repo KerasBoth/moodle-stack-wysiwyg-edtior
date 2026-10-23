@@ -2,6 +2,7 @@
 // und Erzeugung des Blockcodes. Das Modell wird base64-kodiert als Kommentar im Block abgelegt,
 // damit der Editor die Grafik später wieder öffnen kann.
 
+import { LocalizedError, type MessageKey, type Msg } from "../i18n/index.ts";
 import { parseExpression } from "../maxima/parser.ts";
 import type { Expr } from "../maxima/types.ts";
 
@@ -55,13 +56,13 @@ export interface JsxModel {
   extraAttrs?: string;
 }
 
-export const COLORS: { value: JsxColor; label: string }[] = [
-  { value: "#1f6fb2", label: "Blau" },
-  { value: "#c0392b", label: "Rot" },
-  { value: "#1e8449", label: "Grün" },
-  { value: "#d68910", label: "Orange" },
-  { value: "#7d3c98", label: "Violett" },
-  { value: "#2c3e50", label: "Dunkelgrau" },
+export const COLORS: { value: JsxColor; label: MessageKey }[] = [
+  { value: "#1f6fb2", label: "jsx.colors.blue" },
+  { value: "#c0392b", label: "jsx.colors.red" },
+  { value: "#1e8449", label: "jsx.colors.green" },
+  { value: "#d68910", label: "jsx.colors.orange" },
+  { value: "#7d3c98", label: "jsx.colors.violet" },
+  { value: "#2c3e50", label: "jsx.colors.darkGray" },
 ];
 
 export function newModel(): JsxModel {
@@ -106,8 +107,10 @@ export function newElement(model: JsxModel, kind: JsxElement["kind"]): JsxElemen
       return { kind, id, name: nextName(model, ["s1", "s2", "s3", "s4"], "s"), p1: pts[0] ?? "", p2: pts[1] ?? "", type: "segment", color, dashed: false };
     }
     case "text":
+      // Inhalt (ins XML), nicht übersetzen
       return { kind, id, name: nextName(model, ["t1", "t2", "t3"], "t"), x: String(l + w * 0.05), y: String(t - h * 0.08), text: "Text", size: "16" };
     case "code":
+      // Inhalt (ins XML), nicht übersetzen
       return { kind, id, name: "", code: "// eigener JSXGraph-Code, z. B.\n// board.create('circle', [A, 2]);" };
   }
 }
@@ -123,7 +126,8 @@ const MATH_FUNCS: Record<string, string> = {
 };
 const CONSTANTS: Record<string, string> = { "%pi": "Math.PI", pi: "Math.PI", "%e": "Math.E" };
 
-export class TermError extends Error {}
+/** Term nicht übersetzbar; `.msg` für die Anzeige, `.message` bleibt deutsch. */
+export class TermError extends LocalizedError {}
 
 export interface TermContext {
   /** Namen der Schieberegler (werden zu name.Value()). */
@@ -141,12 +145,12 @@ export interface TermContext {
 export function termToJs(term: string, ctx: TermContext): { js: string; dynamic: boolean } {
   const cas: string[] = [];
   const src = term.replace(/\{#([\s\S]*?)#\}/g, (m) => { cas.push(m); return ` __cas${cas.length - 1} `; }).trim();
-  if (!src) throw new TermError("Leerer Term");
+  if (!src) throw new TermError("jsx.errors.emptyTerm");
   let expr: Expr;
   try {
     expr = parseExpression(src);
   } catch (e) {
-    throw new TermError(`Term nicht lesbar: ${e instanceof Error ? e.message : e}`);
+    throw new TermError("jsx.errors.unreadableTerm", { error: e instanceof Error ? e.message : String(e) });
   }
   let dynamic = false;
   const go = (e: Expr): string => {
@@ -162,7 +166,12 @@ export function termToJs(term: string, ctx: TermContext): { js: string; dynamic:
         if (ctx.sliders.includes(n)) { dynamic = true; return `${n}.Value()`; }
         const pm = /^(\w+)_(x|y)$/.exec(n);
         if (pm && ctx.points.includes(pm[1])) { dynamic = true; return `${pm[1]}.${pm[2].toUpperCase()}()`; }
-        throw new TermError(`Unbekannter Name „${n}“ – erlaubt sind ${[ctx.variable, ...ctx.sliders].filter(Boolean).join(", ") || "Zahlen"}${ctx.points.length ? `, Punktkoordinaten wie ${ctx.points[0]}_x` : ""} und {#…#}`);
+        const names = [ctx.variable, ...ctx.sliders].filter(Boolean).join(", ");
+        const example = ctx.points.length ? `${ctx.points[0]}_x` : "";
+        const key = names
+          ? (example ? "jsx.errors.unknownNameWithPoints" : "jsx.errors.unknownName")
+          : (example ? "jsx.errors.unknownNameNumbersWithPoints" : "jsx.errors.unknownNameNumbers");
+        throw new TermError(key, { name: n, names, example });
       }
       case "op": {
         const [a, b] = e.args;
@@ -171,25 +180,32 @@ export function termToJs(term: string, ctx: TermContext): { js: string; dynamic:
           case "+": case "-": case "*": case "/": return `(${go(a)} ${e.op} ${go(b)})`;
           case "^": case "**": return `Math.pow(${go(a)}, ${go(b)})`;
         }
-        throw new TermError(`Operator „${e.op}“ wird in Grafiken nicht unterstützt`);
+        throw new TermError("jsx.errors.unsupportedOperator", { op: e.op });
       }
       case "call": {
         const name = e.fn.k === "sym" ? e.fn.name : "";
         const fn = MATH_FUNCS[name];
-        if (!fn) throw new TermError(`Funktion „${name}“ wird in Grafiken nicht unterstützt`);
+        if (!fn) throw new TermError("jsx.errors.unsupportedFunction", { name });
         return `${fn}(${e.args.map(go).join(", ")})`;
       }
     }
-    throw new TermError("Dieser Ausdruck wird in Grafiken nicht unterstützt");
+    throw new TermError("jsx.errors.unsupportedExpression");
   };
   return { js: go(expr), dynamic };
 }
 
 // ---- Code-Erzeugung -------------------------------------------------------------------------------
+// Der erzeugte Code geht ins XML und ist von der Sprache der Oberfläche unabhängig.
+
+/** Meldung eines Fehlers aus termToJs (andere Fehler sollten dort nicht auftreten). */
+function termErrorMsg(err: unknown): Msg {
+  return err instanceof LocalizedError ? err.msg : { key: "jsx.errors.unreadableTerm", params: { error: err instanceof Error ? err.message : String(err) } };
+}
 
 export interface GenerateResult {
   code: string;
-  errors: { id: string; field: string; message: string }[];
+  /** Fehler je Feld; `msg` wird in der Oberfläche übersetzt. */
+  errors: { id: string; field: string; msg: Msg }[];
   /** An Eingaben gebundene Elemente: Eingabename → Art. */
   bindings: { input: string; kind: "point" | "slider"; element: string }[];
 }
@@ -226,8 +242,8 @@ export function generateJsx(model: JsxModel): GenerateResult {
   const names = new Set<string>();
   for (const e of model.elements) {
     if (e.kind === "code") continue;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(e.name)) errors.push({ id: e.id, field: "name", message: "Name: nur Buchstaben, Ziffern und _ (nicht am Anfang eine Ziffer)" });
-    else if (names.has(e.name)) errors.push({ id: e.id, field: "name", message: `Name „${e.name}“ kommt mehrfach vor` });
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(e.name)) errors.push({ id: e.id, field: "name", msg: { key: "jsx.errors.invalidName" } });
+    else if (names.has(e.name)) errors.push({ id: e.id, field: "name", msg: { key: "jsx.errors.duplicateName", params: { name: e.name } } });
     names.add(e.name);
   }
 
@@ -236,7 +252,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
       const r = termToJs(src, { sliders: allowDynamic ? sliders : [], points: allowDynamic ? points.filter((p) => p !== e.name) : [] });
       return r;
     } catch (err) {
-      errors.push({ id: e.id, field, message: err instanceof Error ? err.message : String(err) });
+      errors.push({ id: e.id, field, msg: termErrorMsg(err) });
       return { js: "0", dynamic: false };
     }
   };
@@ -249,7 +265,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
   const lines: string[] = [];
   const bv = model.boardVar === undefined ? "board" : model.boardVar;
   if (!bv && model.elements.some((e) => e.kind !== "code")) {
-    errors.push({ id: "board", field: "board", message: "Die Zeichenfläche im Code hat keinen erkennbaren Namen – nur eigener Code ist möglich" });
+    errors.push({ id: "board", field: "board", msg: { key: "jsx.errors.boardWithoutName" } });
   }
   const bbox = model.boardInCode ? [] : model.bbox.map((v, i) => num({ id: "board" } as JsxElement, `bbox${i}`, v));
   const extraOpts = model.boardOptions?.trim() ? `, ${model.boardOptions.trim()}` : "";
@@ -289,7 +305,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
         try {
           body = termToJs(e.term, { sliders, points, variable: "x" }).js;
         } catch (err) {
-          errors.push({ id: e.id, field: "term", message: err instanceof Error ? err.message : String(err) });
+          errors.push({ id: e.id, field: "term", msg: termErrorMsg(err) });
         }
         const dx = (e.dx ?? "").trim(), dy = (e.dy ?? "").trim();
         const shiftX = dx && Number(dx) !== 0 ? num(e, "dx", dx) : "";
@@ -305,7 +321,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
       }
       case "line": {
         if (!points.includes(e.p1) || !points.includes(e.p2)) {
-          errors.push({ id: e.id, field: "p1", message: "Bitte zwei vorhandene Punkte wählen" });
+          errors.push({ id: e.id, field: "p1", msg: { key: "jsx.errors.pickTwoPoints" } });
           break;
         }
         const type = e.type === "segment" ? "segment" : e.type === "arrow" ? "arrow" : "line";
@@ -337,6 +353,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
   // Name der Referenzvariable: vorhandenen (aus eingelesenem Code) beibehalten, sonst „ans1Ref“
   const refName = (input: string) => model.extraRefs?.find((r) => r.input === input)?.ref ?? `${input}Ref`;
   if (bindings.length) {
+    // Inhalt (ins XML), nicht übersetzen – jsxparse.ts erkennt den Kommentar an diesem Wortlaut
     lines.push("", "// Verknüpfung mit den Eingabefeldern");
     // Mehrere Objekte an derselben Eingabe werden als Liste gebunden
     for (const input of refs) {
@@ -349,7 +366,7 @@ export function generateJsx(model: JsxModel): GenerateResult {
 
   const size = (s: string, field: string) => {
     const v = s.trim();
-    if (!/^\d+(\.\d+)?(px|%|em|rem|vw)?$/.test(v)) errors.push({ id: "board", field, message: "Größe z. B. 500px oder 100%" });
+    if (!/^\d+(\.\d+)?(px|%|em|rem|vw)?$/.test(v)) errors.push({ id: "board", field, msg: { key: "jsx.errors.size" } });
     return /^\d+(\.\d+)?$/.test(v) ? `${v}px` : v.replace(/"/g, "");
   };
   const head = [

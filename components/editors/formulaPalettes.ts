@@ -1,10 +1,13 @@
 // Werkzeugleiste des Formel-Editors (Entwurf C): Gruppen, deren Tasten als Palette aufklappen.
 // `latex` verwendet MathLive-Platzhalter: #0 = Auswahl bzw. erste offene Stelle, #? = weitere offene Stelle.
+// Beschriftung und Tooltip: Text (Symbol, LaTeX-Name – nicht übersetzt) oder Msg (wird übersetzt).
+
+import type { MessageKey, Msg } from "../../lib/i18n/index.ts";
 
 export interface PaletteKey {
-  label: string;
+  label: string | Msg;
   latex: string;
-  title: string;
+  title: string | Msg;
   /** Statt Einfügen: MathLive-Befehl ausführen (Zeile/Spalte einer Matrix). `latex` bleibt leer. */
   command?: "addRowAfter" | "addRowBefore" | "addColumnAfter" | "addColumnBefore" | "removeRow" | "removeColumn";
   /**
@@ -17,13 +20,18 @@ export interface PaletteKey {
 
 export interface PaletteGroup {
   id: string;
-  label: string;
+  label: MessageKey;
   icon: string;
   keys: PaletteKey[];
 }
 
 const r = String.raw;
-const sym = (label: string, latex: string, title: string): PaletteKey => ({ label, latex, title });
+/** Taste mit Symbol und übersetztem Tooltip `formula.keys.<title>`. */
+const sym = (label: string | Msg, latex: string, title: KeyTitle): PaletteKey => ({ label, latex, title: { key: `formula.keys.${title}` } });
+type KeyTitle = MessageKey extends infer K ? (K extends `formula.keys.${infer T}` ? T : never) : never;
+/** Wort-Beschriftung `formula.labels.<name>`. */
+type LabelName = MessageKey extends infer K ? (K extends `formula.labels.${infer T}` ? T : never) : never;
+const word = (name: LabelName): Msg => ({ key: `formula.labels.${name}` });
 
 /** Matrix mit `rows` × `cols` offenen Stellen (#0 zuerst). */
 export function matrixLatex(env: string, rows: number, cols: number): string {
@@ -58,129 +66,131 @@ const GREEK_UPPER: [string, string][] = [
 
 export const PALETTES: PaletteGroup[] = [
   {
-    id: "roots", label: "Wurzeln & Brüche", icon: "√x",
+    id: "roots", label: "formula.groups.roots", icon: "√x",
     keys: [
-      sym("√x", r`\sqrt{#0}`, "Quadratwurzel"),
-      sym("ⁿ√x", r`\sqrt[#?]{#0}`, "n-te Wurzel"),
-      sym("a⁄b", r`\frac{#0}{#?}`, "Bruch"),
-      sym("xⁿ", r`#0^{#?}`, "Potenz"),
-      sym("xₙ", r`#0_{#?}`, "Index"),
-      sym("xₙᵐ", r`#0_{#?}^{#?}`, "Index und Exponent"),
-      sym("eˣ", r`e^{#0}`, "e-Funktion als Potenz"),
-      sym("( )", r`\left(#0\right)`, "Runde Klammern"),
-      sym("[ ]", r`\left[#0\right]`, "Eckige Klammern"),
-      sym("{ }", r`\left\{#0\right\}`, "Geschweifte Klammern"),
-      sym("|x|", r`\left|#0\right|`, "Betrag"),
+      sym("√x", r`\sqrt{#0}`, "sqrt"),
+      sym("ⁿ√x", r`\sqrt[#?]{#0}`, "nthRoot"),
+      sym("a⁄b", r`\frac{#0}{#?}`, "fraction"),
+      sym("xⁿ", r`#0^{#?}`, "power"),
+      sym("xₙ", r`#0_{#?}`, "subscript"),
+      sym("xₙᵐ", r`#0_{#?}^{#?}`, "subSuperscript"),
+      sym("eˣ", r`e^{#0}`, "expPower"),
+      sym("( )", r`\left(#0\right)`, "parens"),
+      sym("[ ]", r`\left[#0\right]`, "brackets"),
+      sym("{ }", r`\left\{#0\right\}`, "braces"),
+      sym("|x|", r`\left|#0\right|`, "abs"),
     ],
   },
   {
-    id: "analysis", label: "Analysis", icon: "∫",
+    id: "analysis", label: "formula.groups.analysis", icon: "∫",
     keys: [
-      sym("∫", r`\int #0\,\mathrm{d}x`, "Unbestimmtes Integral"),
-      sym("∫ₐᵇ", r`\int_{#?}^{#?} #0\,\mathrm{d}x`, "Bestimmtes Integral"),
-      sym("∬", r`\iint_{#?} #0\,\mathrm{d}A`, "Doppelintegral"),
-      sym("∮", r`\oint_{#?} #0\,\mathrm{d}s`, "Kurvenintegral"),
-      sym("∑", r`\sum_{#?}^{#?} #0`, "Summe"),
-      sym("∏", r`\prod_{#?}^{#?} #0`, "Produkt"),
-      sym("lim", r`\lim_{#? \to #?} #0`, "Grenzwert"),
-      sym("∞", r`\infty`, "Unendlich"),
-      sym("d⁄dx", r`\frac{d}{dx}#0`, "Ableitung d/dx"),
-      sym("dy⁄dx", r`\frac{d#0}{d#?}`, "Differentialquotient"),
-      sym("∂⁄∂x", r`\frac{\partial #0}{\partial #?}`, "Partielle Ableitung"),
-      sym("∂", r`\partial`, "Partielles Differential"),
-      sym("f′", r`^{\prime}`, "Strich (Ableitung)"),
-      sym("∇", r`\nabla`, "Nabla"),
+      sym("∫", r`\int #0\,\mathrm{d}x`, "indefiniteIntegral"),
+      sym("∫ₐᵇ", r`\int_{#?}^{#?} #0\,\mathrm{d}x`, "definiteIntegral"),
+      sym("∬", r`\iint_{#?} #0\,\mathrm{d}A`, "doubleIntegral"),
+      sym("∮", r`\oint_{#?} #0\,\mathrm{d}s`, "contourIntegral"),
+      sym("∑", r`\sum_{#?}^{#?} #0`, "sum"),
+      sym("∏", r`\prod_{#?}^{#?} #0`, "product"),
+      sym("lim", r`\lim_{#? \to #?} #0`, "limit"),
+      sym("∞", r`\infty`, "infinity"),
+      sym("d⁄dx", r`\frac{d}{dx}#0`, "derivative"),
+      sym("dy⁄dx", r`\frac{d#0}{d#?}`, "differentialQuotient"),
+      sym("∂⁄∂x", r`\frac{\partial #0}{\partial #?}`, "partialDerivative"),
+      sym("∂", r`\partial`, "partial"),
+      sym("f′", r`^{\prime}`, "prime"),
+      sym("∇", r`\nabla`, "nabla"),
     ],
   },
   {
-    id: "matrix", label: "Matrizen & Vektoren", icon: "[ ]",
+    id: "matrix", label: "formula.groups.matrix", icon: "[ ]",
     keys: [
-      sym("(2×2)", matrixLatex("pmatrix", 2, 2), "Matrix 2×2, runde Klammern"),
-      sym("(3×3)", matrixLatex("pmatrix", 3, 3), "Matrix 3×3, runde Klammern"),
-      sym("[2×2]", matrixLatex("bmatrix", 2, 2), "Matrix 2×2, eckige Klammern"),
-      sym("[3×3]", matrixLatex("bmatrix", 3, 3), "Matrix 3×3, eckige Klammern"),
-      sym("|2×2|", matrixLatex("vmatrix", 2, 2), "Determinante 2×2"),
-      sym("|3×3|", matrixLatex("vmatrix", 3, 3), "Determinante 3×3"),
-      { label: "(m×n)", latex: "pmatrix", title: "Matrix frei wählbarer Größe, runde Klammern", special: "matrix" },
-      { label: "[m×n]", latex: "bmatrix", title: "Matrix frei wählbarer Größe, eckige Klammern", special: "matrix" },
-      { label: "|m×n|", latex: "vmatrix", title: "Determinante frei wählbarer Größe", special: "matrix" },
-      sym("Spalte", matrixLatex("pmatrix", 3, 1), "Spaltenvektor"),
-      sym("Zeile", matrixLatex("pmatrix", 1, 3), "Zeilenvektor"),
-      sym("v⃗", r`\vec{#0}`, "Vektorpfeil"),
-      sym("‖v‖", r`\left\|#0\right\|`, "Norm"),
-      sym("·", r`\cdot`, "Skalarprodukt"),
-      sym("×", r`\times`, "Kreuzprodukt"),
-      sym("Aᵀ", r`^{T}`, "Transponiert"),
-      { label: "+Zeile↓", latex: "", title: "Zeile unterhalb einfügen (Cursor in der Matrix)", command: "addRowAfter" },
-      { label: "+Zeile↑", latex: "", title: "Zeile oberhalb einfügen (Cursor in der Matrix)", command: "addRowBefore" },
-      { label: "+Spalte→", latex: "", title: "Spalte rechts einfügen (Cursor in der Matrix)", command: "addColumnAfter" },
-      { label: "+Spalte←", latex: "", title: "Spalte links einfügen (Cursor in der Matrix)", command: "addColumnBefore" },
-      { label: "−Zeile", latex: "", title: "Zeile entfernen (Cursor in der Matrix)", command: "removeRow" },
-      { label: "−Spalte", latex: "", title: "Spalte entfernen (Cursor in der Matrix)", command: "removeColumn" },
+      sym("(2×2)", matrixLatex("pmatrix", 2, 2), "pmatrix2"),
+      sym("(3×3)", matrixLatex("pmatrix", 3, 3), "pmatrix3"),
+      sym("[2×2]", matrixLatex("bmatrix", 2, 2), "bmatrix2"),
+      sym("[3×3]", matrixLatex("bmatrix", 3, 3), "bmatrix3"),
+      sym("|2×2|", matrixLatex("vmatrix", 2, 2), "vmatrix2"),
+      sym("|3×3|", matrixLatex("vmatrix", 3, 3), "vmatrix3"),
+      { ...sym("(m×n)", "pmatrix", "pmatrixFree"), special: "matrix" },
+      { ...sym("[m×n]", "bmatrix", "bmatrixFree"), special: "matrix" },
+      { ...sym("|m×n|", "vmatrix", "vmatrixFree"), special: "matrix" },
+      sym(word("column"), matrixLatex("pmatrix", 3, 1), "columnVector"),
+      sym(word("row"), matrixLatex("pmatrix", 1, 3), "rowVector"),
+      sym("v⃗", r`\vec{#0}`, "vector"),
+      sym("‖v‖", r`\left\|#0\right\|`, "norm"),
+      sym("·", r`\cdot`, "dotProduct"),
+      sym("×", r`\times`, "crossProduct"),
+      sym("Aᵀ", r`^{T}`, "transpose"),
+      { ...sym(word("addRowAfter"), "", "addRowAfter"), command: "addRowAfter" },
+      { ...sym(word("addRowBefore"), "", "addRowBefore"), command: "addRowBefore" },
+      { ...sym(word("addColumnAfter"), "", "addColumnAfter"), command: "addColumnAfter" },
+      { ...sym(word("addColumnBefore"), "", "addColumnBefore"), command: "addColumnBefore" },
+      { ...sym(word("removeRow"), "", "removeRow"), command: "removeRow" },
+      { ...sym(word("removeColumn"), "", "removeColumn"), command: "removeColumn" },
     ],
   },
   {
-    id: "greek", label: "Griechisch", icon: "α",
-    keys: [...GREEK_LOWER, ...GREEK_UPPER].map(([label, name]) => sym(label, `\\${name}`, name)),
+    id: "greek", label: "formula.groups.greek", icon: "α",
+    // Tooltip: LaTeX-Name des Buchstabens (nicht übersetzt)
+    keys: [...GREEK_LOWER, ...GREEK_UPPER].map(([label, name]) => ({ label, latex: `\\${name}`, title: name })),
   },
   {
-    id: "logic", label: "Logik & Mengen", icon: "∀",
+    id: "logic", label: "formula.groups.logic", icon: "∀",
     keys: [
-      sym("∀", r`\forall`, "Für alle"),
-      sym("∃", r`\exists`, "Es existiert"),
-      sym("¬", r`\neg`, "Nicht"),
-      sym("∧", r`\land`, "Und"),
-      sym("∨", r`\lor`, "Oder"),
-      sym("⇒", r`\Rightarrow`, "Folgt"),
-      sym("⇔", r`\Leftrightarrow`, "Äquivalent"),
-      sym("∈", r`\in`, "Element von"),
-      sym("∉", r`\notin`, "Nicht Element von"),
-      sym("⊂", r`\subset`, "Echte Teilmenge"),
-      sym("⊆", r`\subseteq`, "Teilmenge"),
-      sym("∪", r`\cup`, "Vereinigung"),
-      sym("∩", r`\cap`, "Schnitt"),
-      sym("∖", r`\setminus`, "Differenzmenge"),
-      sym("∅", r`\emptyset`, "Leere Menge"),
-      sym("{ | }", r`\left\{#0\mid #?\right\}`, "Mengenklammer mit Bedingung"),
-      sym("ℕ", r`\mathbb{N}`, "Natürliche Zahlen"),
-      sym("ℤ", r`\mathbb{Z}`, "Ganze Zahlen"),
-      sym("ℚ", r`\mathbb{Q}`, "Rationale Zahlen"),
-      sym("ℝ", r`\mathbb{R}`, "Reelle Zahlen"),
-      sym("ℂ", r`\mathbb{C}`, "Komplexe Zahlen"),
+      sym("∀", r`\forall`, "forAll"),
+      sym("∃", r`\exists`, "exists"),
+      sym("¬", r`\neg`, "not"),
+      sym("∧", r`\land`, "and"),
+      sym("∨", r`\lor`, "or"),
+      sym("⇒", r`\Rightarrow`, "implies"),
+      sym("⇔", r`\Leftrightarrow`, "equivalent"),
+      sym("∈", r`\in`, "elementOf"),
+      sym("∉", r`\notin`, "notElementOf"),
+      sym("⊂", r`\subset`, "properSubset"),
+      sym("⊆", r`\subseteq`, "subset"),
+      sym("∪", r`\cup`, "union"),
+      sym("∩", r`\cap`, "intersection"),
+      sym("∖", r`\setminus`, "setDifference"),
+      sym("∅", r`\emptyset`, "emptySet"),
+      sym("{ | }", r`\left\{#0\mid #?\right\}`, "setBuilder"),
+      sym("ℕ", r`\mathbb{N}`, "naturals"),
+      sym("ℤ", r`\mathbb{Z}`, "integers"),
+      sym("ℚ", r`\mathbb{Q}`, "rationals"),
+      sym("ℝ", r`\mathbb{R}`, "reals"),
+      sym("ℂ", r`\mathbb{C}`, "complexes"),
     ],
   },
   {
-    id: "functions", label: "Funktionen", icon: "sin",
+    id: "functions", label: "formula.groups.functions", icon: "sin",
     keys: [
-      ...["sin", "cos", "tan", "arcsin", "arccos", "arctan", "ln", "log", "exp", "sinh", "cosh"].map((f) =>
-        sym(f, `\\${f}\\left(#0\\right)`, f)),
-      sym("logₐ", r`\log_{#?}\left(#0\right)`, "Logarithmus zur Basis a"),
+      // Tooltip: Funktionsname (nicht übersetzt)
+      ...["sin", "cos", "tan", "arcsin", "arccos", "arctan", "ln", "log", "exp", "sinh", "cosh"].map((f): PaletteKey =>
+        ({ label: f, latex: `\\${f}\\left(#0\\right)`, title: f })),
+      sym("logₐ", r`\log_{#?}\left(#0\right)`, "logBase"),
     ],
   },
   {
-    id: "relations", label: "Relationen", icon: "≤",
+    id: "relations", label: "formula.groups.relations", icon: "≤",
     keys: [
-      sym("=", "=", "Gleich"),
-      sym("≠", r`\neq`, "Ungleich"),
-      sym("<", "<", "Kleiner"),
-      sym(">", ">", "Größer"),
-      sym("≤", r`\leq`, "Kleiner oder gleich"),
-      sym("≥", r`\geq`, "Größer oder gleich"),
-      sym("≈", r`\approx`, "Ungefähr gleich"),
-      sym("≡", r`\equiv`, "Identisch"),
-      sym("∼", r`\sim`, "Ähnlich"),
-      sym("±", r`\pm`, "Plus-minus"),
-      sym("·", r`\cdot`, "Mal (Punkt)"),
-      sym("×", r`\times`, "Mal (Kreuz)"),
-      sym("→", r`\to`, "Pfeil, gegen"),
-      sym("↦", r`\mapsto`, "Wird abgebildet auf"),
+      sym("=", "=", "equal"),
+      sym("≠", r`\neq`, "notEqual"),
+      sym("<", "<", "less"),
+      sym(">", ">", "greater"),
+      sym("≤", r`\leq`, "lessEqual"),
+      sym("≥", r`\geq`, "greaterEqual"),
+      sym("≈", r`\approx`, "approx"),
+      sym("≡", r`\equiv`, "identical"),
+      sym("∼", r`\sim`, "similar"),
+      sym("±", r`\pm`, "plusMinus"),
+      sym("·", r`\cdot`, "timesDot"),
+      sym("×", r`\times`, "timesCross"),
+      sym("→", r`\to`, "to"),
+      sym("↦", r`\mapsto`, "mapsTo"),
     ],
   },
   {
-    id: "maxima", label: "Maxima", icon: "{@…@}",
+    id: "maxima", label: "formula.groups.maxima", icon: "{@…@}",
     keys: [
-      { label: "{@…@}", latex: "{@expr@}", title: "Maxima-Ausdruck {@…@} (Wert wird angezeigt)", special: "cas" },
-      { label: "{#…#}", latex: "{#expr#}", title: "Maxima-Ausdruck {#…#} (Wert als Maxima-Code)", special: "cas" },
+      { ...sym("{@…@}", "{@expr@}", "casDisplay"), special: "cas" },
+      { ...sym("{#…#}", "{#expr#}", "casValue"), special: "cas" },
     ],
   },
 ];

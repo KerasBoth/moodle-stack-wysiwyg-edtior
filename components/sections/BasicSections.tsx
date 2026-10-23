@@ -332,13 +332,16 @@ export function QuestionTextSection({ q, update }: SectionProps) {
       const parsed = parseJsxBlock(src);
       if (parsed.ok) {
         const parts = [t(block.model ? "sections.text.graphHandEdited" : "sections.text.graphImported")];
-        if (parsed.note) parts.push(parsed.note);
+        if (parsed.note) {
+          const { cause, ...note } = parsed.note;
+          parts.push(t(note.key, cause ? { ...note.params, error: t(cause) } : note.params));
+        }
         else if (parsed.custom) parts.push(t("sections.text.graphCustomCode", { count: parsed.custom }));
         return setGraph({ initial: parsed.model, src, insertAt: insertAfter, notice: parts.join(" ") });
       }
       return setGraph({
         initial: null, src: null, insertAt: insertAfter,
-        notice: t("sections.text.graphUnreadable", { error: parsed.error }),
+        notice: t("sections.text.graphUnreadable", { error: t(parsed.error) }),
       });
     }
   };

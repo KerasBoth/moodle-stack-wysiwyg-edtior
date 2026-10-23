@@ -32,7 +32,7 @@ test("round trip: editor graph → code → editor graph gives the same code", (
   const m = sampleModel();
   const code = generateJsx(m).code;
   const r = parseJsxBlock(code);
-  assert.ok(r.ok, !r.ok ? r.error : "");
+  assert.ok(r.ok, !r.ok ? r.error.key : "");
   if (!r.ok) return;
   assert.equal(r.custom, 0);
   assert.equal(generateJsx(r.model).code.replace(/\/\* stack-editor:jsx [^*]+\*\//, ""), code.replace(/\/\* stack-editor:jsx [^*]+\*\//, ""));
@@ -63,7 +63,7 @@ test("hand-written graph of the sample question: known parts become elements, th
   const text = it.q.texts.questiontext.text;
   const block = /\[\[jsxgraph[\s\S]*?\[\[\/jsxgraph\]\]/.exec(text)![0];
   const r = parseJsxBlock(block);
-  assert.ok(r.ok, !r.ok ? r.error : "");
+  assert.ok(r.ok, !r.ok ? r.error.key : "");
   if (!r.ok) return;
   const kinds = r.model.elements.map((e) => `${e.kind}:${e.name}`);
   assert.ok(kinds.includes("slider:a") && kinds.includes("slider:b"), kinds.join(", "));
@@ -91,7 +91,7 @@ test("hand-written graph of the sample question: known parts become elements, th
 
 test("every existing graph can be opened: unreadable code stays as own code", () => {
   const broken = parseJsxBlock('[[jsxgraph width="300px" input-ref-ans1="r1"]]var x = ;[[/jsxgraph]]');
-  assert.ok(broken.ok && broken.note && /nicht analysieren/.test(broken.note));
+  assert.ok(broken.ok && broken.note?.key === "jsx.parse.notAnalysable");
   if (broken.ok) {
     assert.deepEqual(broken.model.elements.map((e) => e.kind), ["code"]);
     const out = generateJsx(broken.model).code;
@@ -100,7 +100,7 @@ test("every existing graph can be opened: unreadable code stays as own code", ()
     assert.doesNotMatch(out, /initBoard/); // keine zusätzliche Zeichenfläche
   }
   const noBoard = parseJsxBlock("[[jsxgraph]]var b = 1;[[/jsxgraph]]");
-  assert.ok(noBoard.ok && /initBoard/.test(noBoard.note ?? ""));
+  assert.ok(noBoard.ok && noBoard.note?.key === "jsx.parse.noBoard");
   if (noBoard.ok) assert.equal(noBoard.model.boardVar, "");
 });
 
@@ -129,7 +129,7 @@ stack_jxg.bind_point(ans1Ref, A);
   assert.ok(vars.ok);
   if (vars.ok) {
     assert.equal(vars.model.boardInCode, true);
-    assert.ok(vars.note && /eigenen Code/.test(vars.note));
+    assert.equal(vars.note?.key, "jsx.parse.boardInCode");
     assert.deepEqual(vars.model.elements.map((e) => e.kind), ["code", "point"]);
     const A = vars.model.elements[1];
     assert.equal(A.kind === "point" && A.input, "ans1");

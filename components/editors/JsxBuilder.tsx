@@ -11,6 +11,9 @@ import {
   COLORS, type JsxElement, type JsxModel, generateJsx, newElement, newModel,
 } from "@/lib/stack/jsxbuilder";
 import { IconChart, IconCode, IconDown, IconPlus, IconTrash, IconUp } from "../icons";
+import { useT } from "../I18nProvider";
+import { LocalizedError, type MessageKey, type Msg } from "@/lib/i18n";
+import { withParts } from "./richText";
 
 export interface JsxApplyResult {
   code: string;
@@ -21,8 +24,9 @@ export interface JsxApplyResult {
   hideInputs: boolean;
 }
 
-const KIND_LABEL: Record<JsxElement["kind"], string> = {
-  point: "Punkt", slider: "Schieberegler", function: "Funktion", line: "Strecke/Gerade", text: "Text", code: "Eigener Code",
+const KIND_LABEL: Record<JsxElement["kind"], MessageKey> = {
+  point: "jsx.kinds.point", slider: "jsx.kinds.slider", function: "jsx.kinds.function", line: "jsx.kinds.line",
+  text: "jsx.kinds.text", code: "jsx.kinds.code",
 };
 
 // ---- JSXGraph einmalig laden -----------------------------------------------------------------------
@@ -40,8 +44,8 @@ function loadJxg(): Promise<JXGType> {
       document.head.appendChild(css);
       const s = document.createElement("script");
       s.src = "/vendor/jsxgraph/jsxgraphcore.js";
-      s.onload = () => (w.JXG ? resolve(w.JXG) : reject(new Error("JSXGraph nicht verfügbar")));
-      s.onerror = () => reject(new Error("JSXGraph konnte nicht geladen werden"));
+      s.onload = () => (w.JXG ? resolve(w.JXG) : reject(new LocalizedError("jsx.preview.unavailable")));
+      s.onerror = () => reject(new LocalizedError("jsx.preview.loadFailed"));
       document.head.appendChild(s);
     });
   }
@@ -150,18 +154,20 @@ function attachDragging(board: any, objects: Record<string, any>, model: JsxMode
 function Preview({ code, width, height, model, onMove }: {
   code: string; width: string; height: string; model: JsxModel; onMove: (id: string, p: Patch) => void;
 }) {
+  const t = useT();
   const host = useRef<HTMLDivElement>(null);
   // aktuelles Modell/Callback ohne Neuaufbau der Vorschau
   const latest = useRef({ model, onMove });
   latest.current = { model, onMove };
-  const [error, setError] = useState<string | null>(null);
+  // Fehler aus dem Grafik-Code (Text von JSXGraph/Browser) oder eigene Meldung (Msg, beim Anzeigen übersetzt)
+  const [error, setError] = useState<string | Msg | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [missing, setMissing] = useState<string[]>([]);
 
   useEffect(() => {
     let board: unknown = null;
     let cancelled = false;
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       loadJxg().then((JXG) => {
         if (cancelled || !host.current) return;
         host.current.innerHTML = "";
@@ -207,11 +213,11 @@ return {${names.map((n) => `${JSON.stringify(n)}: typeof ${n} !== "undefined" ? 
           JXG.JSXGraph.initBoard = orig;
         }
         setValues({ ...vals });
-      }).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      }).catch((e) => setError(e instanceof LocalizedError ? e.msg : e instanceof Error ? e.message : String(e)));
     }, 250);
     return () => {
       cancelled = true;
-      window.clearTimeout(t);
+      window.clearTimeout(timer);
       const JXG = (window as unknown as { JXG?: JXGType }).JXG;
       if (board && JXG) { try { JXG.JSXGraph.freeBoard(board); } catch { /* ignorieren */ } }
     };
@@ -220,11 +226,11 @@ return {${names.map((n) => `${JSON.stringify(n)}: typeof ${n} !== "undefined" ? 
   return (
     <div className="jsxb-preview">
       <div className="jsxb-board" ref={host} />
-      {error && <div className="issue error"><b>Fehler</b> {error}</div>}
-      {missing.length > 0 && <div className="issue info">Für die Vorschau mit 1 ersetzt: {missing.map((m) => `{#${m}#}`).join(", ")}</div>}
+      {error && <div className="issue error"><b>{t("common.error")}</b> {typeof error === "string" ? error : t(error)}</div>}
+      {missing.length > 0 && <div className="issue info">{t("jsx.preview.replaced", { names: missing.map((m) => `{#${m}#}`).join(", ") })}</div>}
       {Object.keys(values).length > 0 && (
         <div className="jsxb-values">
-          <span className="jsxb-values-label">Wert in den Eingaben</span>
+          <span className="jsxb-values-label">{t("jsx.preview.values")}</span>
           {Object.entries(values).map(([k, v]) => <span key={k} className="jsxb-value"><span className="tok tok-input">{k}</span> = <code>{v}</code></span>)}
         </div>
       )}
@@ -245,12 +251,13 @@ function F({ label, err, children, wide }: { label: string; err?: string; childr
 }
 
 function ColorPick({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const t = useT();
   return (
-    <div className="jsxb-colors" role="radiogroup" aria-label="Farbe">
-      <button type="button" role="radio" aria-checked={value === ""} title="Standard (JSXGraph)" aria-label="Standardfarbe"
+    <div className="jsxb-colors" role="radiogroup" aria-label={t("jsx.color")}>
+      <button type="button" role="radio" aria-checked={value === ""} title={t("jsx.defaultColorTitle")} aria-label={t("jsx.defaultColor")}
         className={`jsxb-color std${value === "" ? " on" : ""}`} onClick={() => onChange("")} />
       {COLORS.map((c) => (
-        <button key={c.value} type="button" role="radio" aria-checked={value === c.value} title={c.label} aria-label={c.label}
+        <button key={c.value} type="button" role="radio" aria-checked={value === c.value} title={t(c.label)} aria-label={t(c.label)}
           className={`jsxb-color${value === c.value ? " on" : ""}`} style={{ background: c.value }} onClick={() => onChange(c.value)} />
       ))}
     </div>
@@ -271,8 +278,12 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
   const [created, setCreated] = useState<string[]>([]);
   const [hideInputs, setHideInputs] = useState(true);
   const [showCode, setShowCode] = useState(false);
+  const t = useT();
   const gen = useMemo(() => generateJsx(model), [model]);
-  const err = (id: string, field: string) => gen.errors.find((e) => e.id === id && e.field === field)?.message;
+  const err = (id: string, field: string) => {
+    const m = gen.errors.find((e) => e.id === id && e.field === field)?.msg;
+    return m && t(m);
+  };
 
   const dialogs = useDialogs();
 
@@ -299,12 +310,12 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
     let n = 1;
     while (allNames.has(`ans${n}`)) n++;
     const answer = await dialogs.prompt({
-      title: "Neue Eingabe",
-      label: "Name",
+      title: t("jsx.newInput.title"),
+      label: t("jsx.newInput.label"),
       initial: `ans${n}`,
       mono: true,
-      confirmLabel: "Anlegen",
-      validate: ({ value }) => (/^[A-Za-z][A-Za-z0-9_]*$/.test(value.trim()) ? null : "Name: Buchstaben, Ziffern und _, beginnend mit einem Buchstaben"),
+      confirmLabel: t("jsx.newInput.create"),
+      validate: ({ value }) => (/^[A-Za-z][A-Za-z0-9_]*$/.test(value.trim()) ? null : t("jsx.newInput.invalid")),
     });
     const name = answer?.trim();
     if (!name) return;
@@ -312,16 +323,16 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
     setEl(elId, { input: name } as Partial<JsxElement>);
   };
   const inputPick = (el: JsxElement & { input: string }) => (
-    <F label="Mit Eingabe verbinden" wide>
+    <F label={t("jsx.bindInput")} wide>
       <select className="sel" value={el.input} onChange={(e) => {
         if (e.target.value === "__new") createInput(el.id);
         else setEl(el.id, { input: e.target.value } as Partial<JsxElement>);
       }}>
-        <option value="">– keine –</option>
+        <option value="">{t("jsx.noInput")}</option>
         {inputNames.map((n) => (
-          <option key={n} value={n}>{n}{created.includes(n) && !inputs.some((i) => i.name === n) ? " (neu)" : ` (${inputs.find((i) => i.name === n)?.type ?? ""})`}</option>
+          <option key={n} value={n}>{n}{created.includes(n) && !inputs.some((i) => i.name === n) ? ` (${t("jsx.inputIsNew")})` : ` (${inputs.find((i) => i.name === n)?.type ?? ""})`}</option>
         ))}
-        <option value="__new">+ Neue Eingabe anlegen …</option>
+        <option value="__new">{t("jsx.createInput")}</option>
       </select>
     </F>
   );
@@ -337,170 +348,174 @@ export default function JsxBuilder({ initial, inputs, notice, onApply, onClose }
     onApply({ code: gen.code, newInputs, boundInputs: bound, hideInputs });
   };
 
-  const [l, t, r, b] = model.bbox;
+  const [l, top, r, b] = model.bbox;
   const setBox = (i: number, v: string) => set((m) => { m.bbox[i] = v; });
 
   return (
-    <Modal className="jsxb" ariaLabel="Grafik-Editor" onClose={onClose} title={<><IconChart className="head-ico" /> Grafik-Editor <small>JSXGraph</small></>}>
+    <Modal className="jsxb" ariaLabel={t("jsx.title")} onClose={onClose} title={<><IconChart className="head-ico" /> {t("jsx.title")} <small>JSXGraph</small></>}>
         <div className="jsxb-body">
           <div className="jsxb-form">
             {notice && <div className="issue info">{notice}</div>}
             <section className="jsxb-sec">
-              <h4>Zeichenfläche</h4>
+              <h4>{t("jsx.board.heading")}</h4>
               <div className="jsxb-grid">
-                <F label="Breite" err={err("board", "width")}><input className="inp" value={model.width} onChange={(e) => set((m) => { m.width = e.target.value; })} /></F>
-                <F label="Höhe" err={err("board", "height")}><input className="inp" value={model.height} onChange={(e) => set((m) => { m.height = e.target.value; })} /></F>
+                <F label={t("jsx.board.width")} err={err("board", "width")}><input className="inp" value={model.width} onChange={(e) => set((m) => { m.width = e.target.value; })} /></F>
+                <F label={t("jsx.board.height")} err={err("board", "height")}><input className="inp" value={model.height} onChange={(e) => set((m) => { m.height = e.target.value; })} /></F>
               </div>
               {model.boardInCode ? (
                 <p className="jsxb-hint">
                   {model.boardVar
-                    ? <>Bereich, Achsen und Gitter legt der eigene Code mit <code>{model.boardVar} = JXG.JSXGraph.initBoard(…)</code> fest – dort bearbeiten.</>
-                    : <>Diese Grafik besteht vollständig aus eigenem Code. Weitere Elemente lassen sich nur als „Eigener Code“ ergänzen.</>}
+                    ? withParts(t("jsx.board.inCode"), { code: <code>{model.boardVar} = JXG.JSXGraph.initBoard(…)</code> })
+                    : t("jsx.board.allCode")}
                 </p>
               ) : (<>
               <div className="jsxb-grid" style={{ marginTop: 8 }}>
-                <F label="x von" err={err("board", "bbox0")}><input className="inp mono" value={l} onChange={(e) => setBox(0, e.target.value)} /></F>
-                <F label="x bis" err={err("board", "bbox2")}><input className="inp mono" value={r} onChange={(e) => setBox(2, e.target.value)} /></F>
-                <F label="y von" err={err("board", "bbox3")}><input className="inp mono" value={b} onChange={(e) => setBox(3, e.target.value)} /></F>
-                <F label="y bis" err={err("board", "bbox1")}><input className="inp mono" value={t} onChange={(e) => setBox(1, e.target.value)} /></F>
+                <F label={t("jsx.board.xFrom")} err={err("board", "bbox0")}><input className="inp mono" value={l} onChange={(e) => setBox(0, e.target.value)} /></F>
+                <F label={t("jsx.board.xTo")} err={err("board", "bbox2")}><input className="inp mono" value={r} onChange={(e) => setBox(2, e.target.value)} /></F>
+                <F label={t("jsx.board.yFrom")} err={err("board", "bbox3")}><input className="inp mono" value={b} onChange={(e) => setBox(3, e.target.value)} /></F>
+                <F label={t("jsx.board.yTo")} err={err("board", "bbox1")}><input className="inp mono" value={top} onChange={(e) => setBox(1, e.target.value)} /></F>
               </div>
               <div className="jsxb-checks">
-                <label className="check"><input type="checkbox" checked={model.axis} onChange={(e) => set((m) => { m.axis = e.target.checked; })} /> Achsen</label>
-                <label className="check"><input type="checkbox" checked={model.grid} onChange={(e) => set((m) => { m.grid = e.target.checked; })} /> Gitter</label>
-                <label className="check"><input type="checkbox" checked={model.keepAspect} onChange={(e) => set((m) => { m.keepAspect = e.target.checked; })} /> Seitenverhältnis 1:1</label>
+                <label className="check"><input type="checkbox" checked={model.axis} onChange={(e) => set((m) => { m.axis = e.target.checked; })} /> {t("jsx.board.axis")}</label>
+                <label className="check"><input type="checkbox" checked={model.grid} onChange={(e) => set((m) => { m.grid = e.target.checked; })} /> {t("jsx.board.grid")}</label>
+                <label className="check"><input type="checkbox" checked={model.keepAspect} onChange={(e) => set((m) => { m.keepAspect = e.target.checked; })} /> {t("jsx.board.keepAspect")}</label>
               </div>
               </>)}
             </section>
 
             <section className="jsxb-sec">
-              <h4>Elemente</h4>
+              <h4>{t("jsx.elements.heading")}</h4>
               <div className="jsxb-add">
                 {(["point", "slider", "function", "line", "text", "code"] as const).map((k) => (
                   <button key={k} type="button" className="btn small" onClick={() => add(k)}
                     disabled={(k === "line" && points.length < 2) || (k !== "code" && model.boardVar === "")}
-                    title={k !== "code" && model.boardVar === "" ? "Die Zeichenfläche ist im Code nicht erkennbar – nur eigener Code möglich"
-                      : k === "line" && points.length < 2 ? "Zuerst zwei Punkte anlegen" : undefined}>
-                    <IconPlus /> {KIND_LABEL[k]}
+                    title={k !== "code" && model.boardVar === "" ? t("jsx.elements.onlyCode")
+                      : k === "line" && points.length < 2 ? t("jsx.elements.needTwoPoints") : undefined}>
+                    <IconPlus /> {t(KIND_LABEL[k])}
                   </button>
                 ))}
               </div>
-              {model.elements.length === 0 && <div className="empty">Noch keine Elemente. Lege zum Beispiel einen Punkt an und verbinde ihn mit einer Eingabe.</div>}
+              {model.elements.length === 0 && <div className="empty">{t("jsx.elements.empty")}</div>}
               {model.elements.map((el, i) => {
                 const open = openId === el.id;
                 const hasErr = gen.errors.some((e) => e.id === el.id);
-                const summary = el.kind === "point" ? `(${el.x} | ${el.y})` : el.kind === "slider" ? `${el.min} … ${el.max}` : el.kind === "function" ? `f(x) = ${el.term}${Number(el.dx || 0) || Number(el.dy || 0) ? ` verschoben um (${el.dx || 0} | ${el.dy || 0})` : ""}` : el.kind === "line" ? `${el.p1} – ${el.p2}` : el.kind === "text" ? el.text : el.code.split("\n").find((l) => l.trim())?.trim() ?? "";
+                const summary = el.kind === "point" ? `(${el.x} | ${el.y})` : el.kind === "slider" ? `${el.min} … ${el.max}` : el.kind === "function" ? `f(x) = ${el.term}${Number(el.dx || 0) || Number(el.dy || 0) ? ` ${t("jsx.elements.shifted", { dx: el.dx || 0, dy: el.dy || 0 })}` : ""}` : el.kind === "line" ? `${el.p1} – ${el.p2}` : el.kind === "text" ? el.text : el.code.split("\n").find((l) => l.trim())?.trim() ?? "";
                 return (
                   <div key={el.id} className={`jsxb-el${open ? " open" : ""}${hasErr ? " err" : ""}`}>
                     <div className="jsxb-el-head">
                       <button type="button" className="jsxb-el-toggle" onClick={() => setOpenId(open ? null : el.id)} aria-expanded={open}>
                         <i className="jsxb-dot" style={{ background: "color" in el && el.color ? el.color : "var(--ink-3)" }} />
                         <b>{el.name}</b>
-                        <span className="jsxb-kind">{KIND_LABEL[el.kind]}</span>
+                        <span className="jsxb-kind">{t(KIND_LABEL[el.kind])}</span>
                         <span className="jsxb-sum">{summary}</span>
                         {"input" in el && el.input && <span className="tok tok-input">{el.input}</span>}
                       </button>
-                      <button type="button" className="btn ghost small" title="Nach oben" disabled={i === 0} onClick={() => move(el.id, -1)}><IconUp /></button>
-                      <button type="button" className="btn ghost small" title="Nach unten" disabled={i === model.elements.length - 1} onClick={() => move(el.id, 1)}><IconDown /></button>
-                      <button type="button" className="btn ghost small danger" title="Entfernen" onClick={() => set((m) => { m.elements = m.elements.filter((x) => x.id !== el.id); })}><IconTrash /></button>
+                      <button type="button" className="btn ghost small" title={t("sections.moveUp")} disabled={i === 0} onClick={() => move(el.id, -1)}><IconUp /></button>
+                      <button type="button" className="btn ghost small" title={t("sections.moveDown")} disabled={i === model.elements.length - 1} onClick={() => move(el.id, 1)}><IconDown /></button>
+                      <button type="button" className="btn ghost small danger" title={t("jsx.elements.remove")} onClick={() => set((m) => { m.elements = m.elements.filter((x) => x.id !== el.id); })}><IconTrash /></button>
                     </div>
                     {open && (
                       <div className="jsxb-grid">
                         {el.kind === "code" ? (
-                          <F label="JavaScript (wird unverändert übernommen)" wide>
+                          <F label={t("jsx.fields.code")} wide>
                             <textarea className="inp mono jsxb-codearea" spellCheck={false} rows={Math.min(14, Math.max(3, el.code.split("\n").length + 1))}
                               value={el.code} onChange={(e) => setEl(el.id, { code: e.target.value })} />
                           </F>
                         ) : (
-                          <F label="Name (im Code)" err={err(el.id, "name")}><input className="inp mono" value={el.name} onChange={(e) => setEl(el.id, { name: e.target.value })} /></F>
+                          <F label={t("jsx.fields.name")} err={err(el.id, "name")}><input className="inp mono" value={el.name} onChange={(e) => setEl(el.id, { name: e.target.value })} /></F>
                         )}
                         {el.kind === "point" && <>
                           <F label="x" err={err(el.id, "x")}><input className="inp mono" value={el.x} onChange={(e) => setEl(el.id, { x: e.target.value })} /></F>
                           <F label="y" err={err(el.id, "y")}><input className="inp mono" value={el.y} onChange={(e) => setEl(el.id, { y: e.target.value })} /></F>
-                          <F label="Raster" err={err(el.id, "snap")}><input className="inp mono" placeholder="frei" value={el.snap} onChange={(e) => setEl(el.id, { snap: e.target.value })} /></F>
+                          <F label={t("jsx.fields.snap")} err={err(el.id, "snap")}><input className="inp mono" placeholder={t("jsx.fields.snapFree")} value={el.snap} onChange={(e) => setEl(el.id, { snap: e.target.value })} /></F>
                           <div className="jsxb-checks wide">
-                            <label className="check"><input type="checkbox" checked={el.fixed} onChange={(e) => setEl(el.id, { fixed: e.target.checked })} /> fest (nicht ziehbar)</label>
-                            <label className="check"><input type="checkbox" checked={el.showLabel} onChange={(e) => setEl(el.id, { showLabel: e.target.checked })} /> Name anzeigen</label>
+                            <label className="check"><input type="checkbox" checked={el.fixed} onChange={(e) => setEl(el.id, { fixed: e.target.checked })} /> {t("jsx.fields.fixed")}</label>
+                            <label className="check"><input type="checkbox" checked={el.showLabel} onChange={(e) => setEl(el.id, { showLabel: e.target.checked })} /> {t("jsx.fields.showName")}</label>
                           </div>
                           {inputPick(el)}
                         </>}
                         {el.kind === "slider" && <>
-                          <F label="Beschriftung"><input className="inp" placeholder={el.name} value={el.label} onChange={(e) => setEl(el.id, { label: e.target.value })} /></F>
-                          <F label="Minimum" err={err(el.id, "min")}><input className="inp mono" value={el.min} onChange={(e) => setEl(el.id, { min: e.target.value })} /></F>
-                          <F label="Startwert" err={err(el.id, "start")}><input className="inp mono" value={el.start} onChange={(e) => setEl(el.id, { start: e.target.value })} /></F>
-                          <F label="Maximum" err={err(el.id, "max")}><input className="inp mono" value={el.max} onChange={(e) => setEl(el.id, { max: e.target.value })} /></F>
-                          <F label="Schrittweite" err={err(el.id, "step")}><input className="inp mono" placeholder="stufenlos" value={el.step} onChange={(e) => setEl(el.id, { step: e.target.value })} /></F>
-                          <F label="Position Start (x, y)" err={err(el.id, "x1") ?? err(el.id, "y1")}>
+                          <F label={t("jsx.fields.label")}><input className="inp" placeholder={el.name} value={el.label} onChange={(e) => setEl(el.id, { label: e.target.value })} /></F>
+                          <F label={t("jsx.fields.min")} err={err(el.id, "min")}><input className="inp mono" value={el.min} onChange={(e) => setEl(el.id, { min: e.target.value })} /></F>
+                          <F label={t("jsx.fields.start")} err={err(el.id, "start")}><input className="inp mono" value={el.start} onChange={(e) => setEl(el.id, { start: e.target.value })} /></F>
+                          <F label={t("jsx.fields.max")} err={err(el.id, "max")}><input className="inp mono" value={el.max} onChange={(e) => setEl(el.id, { max: e.target.value })} /></F>
+                          <F label={t("jsx.fields.step")} err={err(el.id, "step")}><input className="inp mono" placeholder={t("jsx.fields.stepless")} value={el.step} onChange={(e) => setEl(el.id, { step: e.target.value })} /></F>
+                          <F label={t("jsx.fields.posStart")} err={err(el.id, "x1") ?? err(el.id, "y1")}>
                             <span className="jsxb-pair"><input className="inp mono" value={el.x1} onChange={(e) => setEl(el.id, { x1: e.target.value })} /><input className="inp mono" value={el.y1} onChange={(e) => setEl(el.id, { y1: e.target.value })} /></span>
                           </F>
-                          <F label="Position Ende (x, y)" err={err(el.id, "x2") ?? err(el.id, "y2")}>
+                          <F label={t("jsx.fields.posEnd")} err={err(el.id, "x2") ?? err(el.id, "y2")}>
                             <span className="jsxb-pair"><input className="inp mono" value={el.x2} onChange={(e) => setEl(el.id, { x2: e.target.value })} /><input className="inp mono" value={el.y2} onChange={(e) => setEl(el.id, { y2: e.target.value })} /></span>
                           </F>
                           {inputPick(el)}
                         </>}
                         {el.kind === "function" && <>
                           <F label="f(x) =" err={err(el.id, "term")} wide><input className="inp mono" value={el.term} onChange={(e) => setEl(el.id, { term: e.target.value })} /></F>
-                          <F label="von x" err={err(el.id, "from")}><input className="inp mono" placeholder="−∞" value={el.from} onChange={(e) => setEl(el.id, { from: e.target.value })} /></F>
-                          <F label="bis x" err={err(el.id, "to")}><input className="inp mono" placeholder="∞" value={el.to} onChange={(e) => setEl(el.id, { to: e.target.value })} /></F>
-                          <F label="Verschiebung x" err={err(el.id, "dx")}><input className="inp mono" value={el.dx ?? "0"} onChange={(e) => setEl(el.id, { dx: e.target.value })} /></F>
-                          <F label="Verschiebung y" err={err(el.id, "dy")}><input className="inp mono" value={el.dy ?? "0"} onChange={(e) => setEl(el.id, { dy: e.target.value })} /></F>
-                          <F label="Linienstärke" err={err(el.id, "width")}><input className="inp mono" value={el.width} onChange={(e) => setEl(el.id, { width: e.target.value })} /></F>
-                          <div className="jsxb-checks"><label className="check"><input type="checkbox" checked={el.dashed} onChange={(e) => setEl(el.id, { dashed: e.target.checked })} /> gestrichelt</label></div>
+                          <F label={t("jsx.fields.fromX")} err={err(el.id, "from")}><input className="inp mono" placeholder="−∞" value={el.from} onChange={(e) => setEl(el.id, { from: e.target.value })} /></F>
+                          <F label={t("jsx.fields.toX")} err={err(el.id, "to")}><input className="inp mono" placeholder="∞" value={el.to} onChange={(e) => setEl(el.id, { to: e.target.value })} /></F>
+                          <F label={t("jsx.fields.shiftX")} err={err(el.id, "dx")}><input className="inp mono" value={el.dx ?? "0"} onChange={(e) => setEl(el.id, { dx: e.target.value })} /></F>
+                          <F label={t("jsx.fields.shiftY")} err={err(el.id, "dy")}><input className="inp mono" value={el.dy ?? "0"} onChange={(e) => setEl(el.id, { dy: e.target.value })} /></F>
+                          <F label={t("jsx.fields.lineWidth")} err={err(el.id, "width")}><input className="inp mono" value={el.width} onChange={(e) => setEl(el.id, { width: e.target.value })} /></F>
+                          <div className="jsxb-checks"><label className="check"><input type="checkbox" checked={el.dashed} onChange={(e) => setEl(el.id, { dashed: e.target.checked })} /> {t("jsx.fields.dashed")}</label></div>
                         </>}
                         {el.kind === "line" && <>
-                          <F label="Art">
+                          <F label={t("jsx.fields.lineType")}>
                             <select className="sel" value={el.type} onChange={(e) => setEl(el.id, { type: e.target.value as "segment" | "line" | "arrow" })}>
-                              <option value="segment">Strecke</option><option value="line">Gerade</option><option value="arrow">Pfeil</option>
+                              <option value="segment">{t("jsx.fields.segment")}</option><option value="line">{t("jsx.fields.line")}</option><option value="arrow">{t("jsx.fields.arrow")}</option>
                             </select>
                           </F>
-                          <F label="Von Punkt" err={err(el.id, "p1")}>
+                          <F label={t("jsx.fields.fromPoint")} err={err(el.id, "p1")}>
                             <select className="sel" value={el.p1} onChange={(e) => setEl(el.id, { p1: e.target.value })}>
                               <option value="">–</option>{points.map((p) => <option key={p} value={p}>{p}</option>)}
                             </select>
                           </F>
-                          <F label="Zu Punkt">
+                          <F label={t("jsx.fields.toPoint")}>
                             <select className="sel" value={el.p2} onChange={(e) => setEl(el.id, { p2: e.target.value })}>
                               <option value="">–</option>{points.map((p) => <option key={p} value={p}>{p}</option>)}
                             </select>
                           </F>
-                          <div className="jsxb-checks"><label className="check"><input type="checkbox" checked={el.dashed} onChange={(e) => setEl(el.id, { dashed: e.target.checked })} /> gestrichelt</label></div>
+                          <div className="jsxb-checks"><label className="check"><input type="checkbox" checked={el.dashed} onChange={(e) => setEl(el.id, { dashed: e.target.checked })} /> {t("jsx.fields.dashed")}</label></div>
                         </>}
                         {el.kind === "text" && <>
-                          <F label="Text" wide><input className="inp" value={el.text} onChange={(e) => setEl(el.id, { text: e.target.value })} /></F>
+                          <F label={t("jsx.fields.text")} wide><input className="inp" value={el.text} onChange={(e) => setEl(el.id, { text: e.target.value })} /></F>
                           <F label="x" err={err(el.id, "x")}><input className="inp mono" value={el.x} onChange={(e) => setEl(el.id, { x: e.target.value })} /></F>
                           <F label="y" err={err(el.id, "y")}><input className="inp mono" value={el.y} onChange={(e) => setEl(el.id, { y: e.target.value })} /></F>
-                          <F label="Schriftgröße" err={err(el.id, "size")}><input className="inp mono" value={el.size} onChange={(e) => setEl(el.id, { size: e.target.value })} /></F>
+                          <F label={t("jsx.fields.fontSize")} err={err(el.id, "size")}><input className="inp mono" value={el.size} onChange={(e) => setEl(el.id, { size: e.target.value })} /></F>
                         </>}
-                        {"color" in el && <F label="Farbe" wide><ColorPick value={el.color} onChange={(c) => setEl(el.id, { color: c } as Partial<JsxElement>)} /></F>}
+                        {"color" in el && <F label={t("jsx.color")} wide><ColorPick value={el.color} onChange={(c) => setEl(el.id, { color: c } as Partial<JsxElement>)} /></F>}
                       </div>
                     )}
                   </div>
                 );
               })}
               <p className="jsxb-hint">
-                Werte und Terme in Maxima-Schreibweise: <code>x^2</code>, <code>sqrt(x)</code>, <code>sin(x)</code>, <code>%pi</code>.
-                Erlaubt sind außerdem Reglernamen (z. B. <code>a</code>), Punktkoordinaten wie <code>A_x</code> und Fragevariablen als <code>{"{#name#}"}</code>.
+                {withParts(t("jsx.termsHint"), {
+                  examples: <><code>x^2</code>, <code>sqrt(x)</code>, <code>sin(x)</code>, <code>%pi</code></>,
+                  slider: <code>a</code>,
+                  coord: <code>A_x</code>,
+                  casvar: <code>{"{#name#}"}</code>,
+                })}
               </p>
             </section>
           </div>
 
           <div className="jsxb-side">
             <Preview code={gen.errors.length ? "" : gen.code} width={model.width} height={model.height} model={model} onMove={setEl} />
-            <p className="jsxb-hint drag-hint">Punkte, Regler und Funktionsgraphen lassen sich in der Vorschau mit der Maus verschieben. Die Werte links werden dabei angepasst.</p>
-            {gen.errors.length > 0 && <div className="issue warning">{gen.errors.length} Angabe(n) prüfen. Die Vorschau erscheint, sobald alles gültig ist.</div>}
-            <button type="button" className="btn small ghost" onClick={() => setShowCode(!showCode)}><IconCode /> {showCode ? "Code ausblenden" : "Erzeugten Code anzeigen"}</button>
+            <p className="jsxb-hint drag-hint">{t("jsx.dragHint")}</p>
+            {gen.errors.length > 0 && <div className="issue warning">{t("jsx.checkFields", { count: gen.errors.length })}</div>}
+            <button type="button" className="btn small ghost" onClick={() => setShowCode(!showCode)}><IconCode /> {showCode ? t("jsx.hideCode") : t("jsx.showCode")}</button>
             {showCode && <pre className="jsxb-code">{gen.code}</pre>}
           </div>
         </div>
         <div className="jsxb-foot">
           {gen.bindings.length > 0 && (
-            <label className="check" title="Die Eingabefelder werden mit display:none versteckt; die Grafik schreibt ihren Wert hinein.">
-              <input type="checkbox" checked={hideInputs} onChange={(e) => setHideInputs(e.target.checked)} /> Neue Eingabefelder im Fragetext ausblenden
+            <label className="check" title={t("jsx.hideInputsTitle")}>
+              <input type="checkbox" checked={hideInputs} onChange={(e) => setHideInputs(e.target.checked)} /> {t("jsx.hideInputs")}
             </label>
           )}
           <div className="spacer" />
-          <button type="button" className="btn" onClick={onClose}>Abbrechen</button>
+          <button type="button" className="btn" onClick={onClose}>{t("common.cancel")}</button>
           <button type="button" className="btn primary" disabled={gen.errors.length > 0} onClick={apply}>
-            {initial ? "Grafik aktualisieren" : "Grafik einfügen"}
+            {initial ? t("jsx.update") : t("jsx.insert")}
           </button>
         </div>
     </Modal>

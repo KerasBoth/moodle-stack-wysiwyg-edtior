@@ -168,15 +168,6 @@ export default {
       lambda: "Función anónima",
       mcLabel: "Respuesta del profesor de opción múltiple [[…,true],…]",
     },
-    field: {
-      condition: "condicion",
-      expression: "expresion",
-      local: "local",
-      value: "valor{n}",
-      list: "lista",
-      hint: "Pista",
-      langCode: "es",
-    },
     cas: {
       inputField: "Campo de respuesta",
       validation: "Validación",

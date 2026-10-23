@@ -92,7 +92,7 @@ export default {
   toolbar: {
     input: "Vstupné pole",
     feedback: "Spätná väzba",
-    notInText: "{count} ešte nie je v texte",
+    notInText: { one: "{count} ešte nie je v texte", few: "{count} ešte nie sú v texte", other: "{count} ešte nie je v texte" },
     insertInputHead: "Vložiť vstupné pole s validáciou",
     insertFeedbackHead: "Vložiť spätnú väzbu PRT",
     used: "použité",

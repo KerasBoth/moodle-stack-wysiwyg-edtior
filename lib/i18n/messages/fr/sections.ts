@@ -63,8 +63,8 @@ export default {
       one: "Nouveau champ de réponse {names} créé. Saisissez la réponse de l'enseignant sous « Champs de réponse » et évaluez le champ dans un arbre de réponses potentielles.",
       other: "Nouveaux champs de réponse {names} créés. Saisissez les réponses de l'enseignant sous « Champs de réponse » et évaluez les champs dans un arbre de réponses potentielles.",
     },
-    graphFieldsInserted: "Champs de saisie pour {names} insérés après le graphique.",
-    graphFieldsInsertedHidden: "Champs de saisie pour {names} insérés, masqués, après le graphique.",
+    graphFieldsInserted: "Champs de réponse pour {names} insérés après le graphique.",
+    graphFieldsInsertedHidden: "Champs de réponse pour {names} insérés, masqués, après le graphique.",
   },
   feedback: {
     desc: "Textes de feedback (CASText). Chaque champ peut basculer entre l'affichage texte et HTML.",

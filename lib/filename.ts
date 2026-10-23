@@ -7,6 +7,12 @@ export function fileNameFromTitle(title: string): string {
   return `${base || "stack-aufgabe"}.xml`;
 }
 
+/**
+ * Gespeicherter Platzhalter für eine Aufgabe ohne Namen in der Liste der Aufgabennamen einer Datei (Datenbank).
+ * Der Wert bleibt in jeder Sprache gleich; erst die Anzeige übersetzt ihn (`editor.sidebar.unnamed`).
+ */
+export const UNNAMED_QUESTION = "(ohne Namen)";
+
 /** Nummerierter Name: `numberedName("kurve.xml", 2)` → `kurve-2.xml`. */
 export function numberedName(name: string, n: number): string {
   const m = /^(.*?)(\.xml)?$/i.exec(name)!;

@@ -7,6 +7,7 @@ import type { DashboardData, FileInfo, User } from "@/lib/server/store";
 import { api, ApiError, relTime } from "@/lib/client/api";
 import { IconClock, IconFile, IconPencil, IconPlus, IconSearch, IconShare, IconTag, IconTrash, IconUpload, IconX } from "./icons";
 import { personName } from "@/lib/people";
+import { UNNAMED_QUESTION } from "@/lib/filename";
 import { useDialogs } from "./Dialogs";
 import { useLocale, useT } from "./I18nProvider";
 import LanguageSwitcher from "./LanguageSwitcher";
@@ -286,7 +287,7 @@ function FileRows({ files, showCategory, onDelete, onShare }: { files: FileInfo[
             <IconFile className="file-ico" />
             <span className="file-main">
               <span className="file-q">
-                {f.questions[0] ?? f.name}
+                {f.questions[0] === UNNAMED_QUESTION ? t("editor.sidebar.unnamed") : f.questions[0] ?? f.name}
                 {f.questions.length > 1 && <span className="more-q"> {t("dashboard.moreQuestions", { count: f.questions.length - 1 })}</span>}
               </span>
               <span className="file-name">{f.name}</span>

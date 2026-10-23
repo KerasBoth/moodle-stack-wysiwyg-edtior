@@ -204,7 +204,7 @@ export default {
     deleteTitle: "Delete PRT?",
     deleteMessage: "Delete PRT {name}?",
     renameTitle: "Renaming updates [[feedback:…]] and tests",
-    weight: "Weighting",
+    weight: "Weight",
     weightHint: "share of the total mark",
     feedbackStyle: "Feedback style",
     styleStandard: "Standard",

@@ -169,15 +169,6 @@ export default {
       lambda: "Fonction anonyme",
       mcLabel: "Réponse de l'enseignant QCM [[…,true],…]",
     },
-    field: {
-      condition: "condition",
-      expression: "expression",
-      local: "local",
-      value: "valeur{n}",
-      list: "liste",
-      hint: "Indice",
-      langCode: "fr",
-    },
     cas: {
       inputField: "Champ de réponse",
       validation: "Validation",

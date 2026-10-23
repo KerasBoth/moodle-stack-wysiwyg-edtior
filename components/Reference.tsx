@@ -52,7 +52,6 @@ export default function Reference({ onClose, notify }: { onClose: () => void; no
   const testTexts = useMemo(() => ANSWER_TESTS.map((a) => ({ a, x: answerTestText(a, t) })), [t]);
   const blockTexts = useMemo(() => CASTEXT_BLOCKS.map((b) => casTextBlockText(b, t)), [t]);
   const casTextHelp = t("reference.casTextHelp");
-  const expr = t("lib.editor.field.expression");
 
   const fns = fnTexts.filter(({ f, x }) => (cat === ALL || f.cat === cat) && match(f.name, f.sig, x.desc));
 
@@ -108,7 +107,7 @@ export default function Reference({ onClose, notify }: { onClose: () => void; no
           ))}
           {(cat === ALL || cat === CASTEXT) && match("{@", "{#", "latex", casTextHelp) && (
             <div className="ref">
-              <div className="ref-head"><span className="ref-sig">{`{@${expr}@}  ·  {#${expr}#}  ·  [[input:ans1]]`}</span></div>
+              <div className="ref-head"><span className="ref-sig">{"{@ausdruck@}  ·  {#ausdruck#}  ·  [[input:ans1]]"}</span></div>
               <p>{withCode(casTextHelp)}</p>
             </div>
           )}

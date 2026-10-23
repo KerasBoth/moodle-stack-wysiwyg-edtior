@@ -62,8 +62,8 @@ export default {
       one: "Se ha creado el nuevo campo de respuesta {names}. Introduzca la respuesta del profesor en «Campos de respuesta» y evalúe el campo en un árbol de respuestas potenciales.",
       other: "Se han creado los nuevos campos de respuesta {names}. Introduzca las respuestas del profesor en «Campos de respuesta» y evalúe los campos en un árbol de respuestas potenciales.",
     },
-    graphFieldsInserted: "Campos de entrada para {names} insertados detrás del gráfico.",
-    graphFieldsInsertedHidden: "Campos de entrada para {names} insertados, ocultos, detrás del gráfico.",
+    graphFieldsInserted: "Campos de respuesta para {names} insertados detrás del gráfico.",
+    graphFieldsInsertedHidden: "Campos de respuesta para {names} insertados, ocultos, detrás del gráfico.",
   },
   feedback: {
     desc: "Textos de retroalimentación (CASText). Cada campo puede alternar entre la vista de texto y la de HTML.",

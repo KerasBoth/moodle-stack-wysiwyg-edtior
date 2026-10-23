@@ -171,16 +171,6 @@ export default {
       lambda: "Anonyme Funktion",
       mcLabel: "MC-Musterlösung [[…,true],…]",
     },
-    // Namen der Felder in eingefügten Vorlagen (werden beim Ausfüllen überschrieben)
-    field: {
-      condition: "bedingung",
-      expression: "ausdruck",
-      local: "lokal",
-      value: "wert{n}",
-      list: "liste",
-      hint: "Hinweis",
-      langCode: "de",
-    },
     cas: {
       inputField: "Eingabefeld",
       validation: "Validierung",

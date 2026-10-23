@@ -48,7 +48,7 @@ export default {
     approximate: "(lokálne približne)",
     invalid: "Vaša odpoveď je neplatná alebo neúplná.",
     gradeLabel: "Hodnotenie:",
-    grade: "{score} z {grade} bodov (bez penalizácie)",
+    grade: "{score} z max. {grade} b. (bez penalizácie)",
     specificFeedback: "Špecifická spätná väzba",
     generalFeedback: "Všeobecná spätná väzba",
     workedSolution: "Vzorové riešenie",

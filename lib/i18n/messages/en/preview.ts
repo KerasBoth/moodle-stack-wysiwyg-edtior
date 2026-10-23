@@ -57,7 +57,7 @@ export default {
     maxima: "Maxima",
     seed: "Seed {seed}",
     reachable: "Marked out of {grade}",
-    penalty: "Penalty: {penalty} %",
+    penalty: "Penalty: {penalty}%",
     questionNote: "Question note:",
     empty: "empty",
     check: "Check",

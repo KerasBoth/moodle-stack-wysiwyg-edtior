@@ -25,7 +25,7 @@ import { useLocale, useT } from "./I18nProvider";
 import { errorMsg, formatDate } from "@/lib/i18n";
 import SaveAsDialog from "./SaveAsDialog";
 import { isModalOpen, useDialogs } from "./Dialogs";
-import { fileNameFromTitle } from "@/lib/filename";
+import { UNNAMED_QUESTION, fileNameFromTitle } from "@/lib/filename";
 
 export type Updater = (fn: (q: StackQuestion) => void) => void;
 
@@ -622,7 +622,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
                     <button key={f.id} className={`mi${file?.id === f.id ? " current" : ""}`} onClick={() => openServerFile(f.id)}
                       title={f.role !== "owner" ? t("editor.menu.fileSharedBy", { name: f.name, owner: f.ownerName })
                         : f.categoryName ? t("editor.menu.fileInCategory", { name: f.name, category: f.categoryName }) : f.name}>
-                      <span className="mi-file"><IconFile /><span className="mi-file-name">{f.questions[0] ?? f.name}</span></span>
+                      <span className="mi-file"><IconFile /><span className="mi-file-name">{f.questions[0] === UNNAMED_QUESTION ? t("editor.sidebar.unnamed") : f.questions[0] ?? f.name}</span></span>
                       <small>{f.role !== "owner" ? `${f.ownerName} · ` : ""}{formatDate(locale, f.updatedAt)}</small>
                     </button>
                   ))}

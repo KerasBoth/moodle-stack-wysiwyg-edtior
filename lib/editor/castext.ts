@@ -102,7 +102,8 @@ function placeholderCompletions(): Completion[] {
   }
   out.push({ label: "[[/if]]", type: "keyword", detail: t("lib.editor.cas.endIf") });
   out.push({ label: "[[else]]", type: "keyword", detail: t("lib.editor.cas.elseBranch") });
-  out.push(snippetCompletion(`[[elif test="\${${t("lib.editor.field.condition")}}"]]`, { label: "[[elif test=…]]", type: "keyword", detail: t("lib.editor.cas.elifBranch") }));
+  // Inhalt (ins XML), nicht übersetzen – der Feldname bleibt stehen, wenn er nicht überschrieben wird
+  out.push(snippetCompletion('[[elif test="${bed}"]]', { label: "[[elif test=…]]", type: "keyword", detail: t("lib.editor.cas.elifBranch") }));
   return out;
 }
 
@@ -145,7 +146,8 @@ function casTextCompletionSource(ctx: CompletionContext): CompletionResult | nul
       label: `{@${v.name}@}`, type: "variable", detail: `= ${v.value.slice(0, 40)}`, boost: 2,
     }));
     const raws = editorContext.current.variables.map((v) => ({ label: `{#${v.name}#}`, type: "variable", detail: t("lib.editor.cas.rawValue") }));
-    const exprSnippet = snippetCompletion(`{@\${${t("lib.editor.field.expression")}}@}`, { label: "{@ … @}", detail: t("lib.editor.cas.latexOutput") });
+    // Inhalt (ins XML), nicht übersetzen
+    const exprSnippet = snippetCompletion("{@${ausdruck}@}", { label: "{@ … @}", detail: t("lib.editor.cas.latexOutput") });
     return { from: cas.from, to: closing("}"), options: [...vars, ...raws, exprSnippet] };
   }
   return null;

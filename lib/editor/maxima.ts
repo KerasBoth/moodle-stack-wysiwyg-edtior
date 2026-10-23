@@ -111,19 +111,21 @@ function renderVar(name: string, value: string): HTMLElement {
 
 // ---- Autovervollständigung ------------------------------------------------------------------
 
-// Vorlagen in der Sprache der Oberfläche (Feldnamen sind nur Platzhalter zum Überschreiben)
+// Vorlagen; nur die Beschreibungen folgen der Sprache der Oberfläche. Die Feldnamen landen in der Aufgabe, wenn
+// sie nicht überschrieben werden, und bleiben daher in jeder Sprache gleich.
 function functionSnippets(): Completion[] {
   const t = editorContext.t;
-  const cond = t("lib.editor.field.condition"), expr = t("lib.editor.field.expression");
   return [
-    snippetCompletion(`if \${${cond}} then \${a} else \${b}`, { label: "if … then … else", type: "keyword", detail: t("lib.editor.snippet.condition"), boost: -1 }),
-    snippetCompletion(`block([\${${t("lib.editor.field.local")}}],\n  \${}\n)`, { label: "block([…], …)", type: "keyword", detail: t("lib.editor.snippet.block"), boost: -1 }),
-    snippetCompletion(`makelist(\${${expr}}, \${i}, \${1}, \${n})`, { label: "makelist(…, i, a, b)", type: "function", detail: t("lib.editor.snippet.makelist"), boost: -1 }),
-    snippetCompletion(`lambda([\${x}], \${${expr}})`, { label: "lambda([x], …)", type: "function", detail: t("lib.editor.snippet.lambda"), boost: -1 }),
-    snippetCompletion(
-      `[[\${${t("lib.editor.field.value", { n: 1 })}}, true], [\${${t("lib.editor.field.value", { n: 2 })}}, false]]`,
-      { label: t("lib.editor.snippet.mcLabel"), type: "text", detail: "dropdown/radio/checkbox", boost: -2 },
-    ),
+    // Inhalt (ins XML), nicht übersetzen
+    snippetCompletion("if ${bedingung} then ${a} else ${b}", { label: "if … then … else", type: "keyword", detail: t("lib.editor.snippet.condition"), boost: -1 }),
+    // Inhalt (ins XML), nicht übersetzen
+    snippetCompletion("block([${lokal}],\n  ${}\n)", { label: "block([…], …)", type: "keyword", detail: t("lib.editor.snippet.block"), boost: -1 }),
+    // Inhalt (ins XML), nicht übersetzen
+    snippetCompletion("makelist(${ausdruck}, ${i}, ${1}, ${n})", { label: "makelist(…, i, a, b)", type: "function", detail: t("lib.editor.snippet.makelist"), boost: -1 }),
+    // Inhalt (ins XML), nicht übersetzen
+    snippetCompletion("lambda([${x}], ${ausdruck})", { label: "lambda([x], …)", type: "function", detail: t("lib.editor.snippet.lambda"), boost: -1 }),
+    // Inhalt (ins XML), nicht übersetzen
+    snippetCompletion("[[${wert1}, true], [${wert2}, false]]", { label: t("lib.editor.snippet.mcLabel"), type: "text", detail: "dropdown/radio/checkbox", boost: -2 }),
   ];
 }
 

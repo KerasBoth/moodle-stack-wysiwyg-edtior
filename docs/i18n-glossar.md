@@ -25,7 +25,8 @@ Deutsch ist die Quelle. Neue Fachbegriffe zuerst hier eintragen, dann übersetze
 | Rückmeldevariablen | Feedback variables | Variables de feedback | Variables de retroalimentación | Variabili di feedback | Premenné spätnej väzby |
 | Rückmeldung (Feedback) | Feedback | Feedback | Retroalimentación | Feedback | Spätná väzba |
 | Allgemeines Feedback | General feedback | Feedback général | Retroalimentación general | Feedback generale | Všeobecná spätná väzba |
-| Musterlösung | Worked solution | Solution détaillée | Solución desarrollada | Soluzione svolta | Vzorové riešenie |
+| Musterlösung (allgemeines Feedback, ausgearbeiteter Lösungsweg) | Worked solution | Solution détaillée | Solución desarrollada | Soluzione svolta | Vzorové riešenie |
+| Musterlösung (tans/TAns, erwartete Antwort einer Eingabe bzw. eines Knotens) | Teacher's answer | Réponse de l'enseignant | Respuesta del profesor | Risposta del docente | Odpoveď učiteľa |
 | Punkte | Mark | Note | Puntuación | Punteggio | Body |
 | Bewertung | Grading | Évaluation | Calificación | Valutazione | Hodnotenie |
 | Abzug | Penalty | Pénalité | Penalización | Penalità | Penalizácia |

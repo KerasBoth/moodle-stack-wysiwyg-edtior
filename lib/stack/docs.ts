@@ -245,29 +245,28 @@ export function docText(doc: FnDoc, t: Translator): FnDocText {
 export interface CasTextSnippet {
   id: keyof Messages["reference"]["casText"];
   label: string;
-  /** Vorlage; ${@name} wird zum Feld ${…} mit dem übersetzten Namen `lib.editor.field.<name>`. */
+  /** Vorlage mit Feldern ${…}; nicht überschriebene Feldnamen landen in der Aufgabe. */
   insert: string;
 }
 
+// Inhalt (ins XML), nicht übersetzen – die Vorlagen (samt Feldnamen) sind in jeder Sprache gleich
 export const CASTEXT_BLOCKS: CasTextSnippet[] = [
-  { id: "if", label: "[[if test=…]]", insert: '[[if test="${@condition}"]]\n${}\n[[else]]\n\n[[/if]]' },
-  { id: "foreach", label: "[[foreach x=…]]", insert: '[[foreach ${x}="${@list}"]]${}[[/foreach]]' },
-  { id: "define", label: "[[define x=…]]", insert: '[[define ${x}="${@expression}"]]' },
+  { id: "if", label: "[[if test=…]]", insert: '[[if test="${bed}"]]\n${}\n[[else]]\n\n[[/if]]' },
+  { id: "foreach", label: "[[foreach x=…]]", insert: '[[foreach ${x}="${liste}"]]${}[[/foreach]]' },
+  { id: "define", label: "[[define x=…]]", insert: '[[define ${x}="${ausdruck}"]]' },
   { id: "comment", label: "[[comment]]", insert: "[[comment]]${}[[/comment]]" },
   { id: "escape", label: "[[escape]]", insert: '[[escape value="${text}"]]' },
-  { id: "hint", label: "[[hint title=…]]", insert: '[[hint title="${@hint}"]]${}[[/hint]]' },
-  { id: "lang", label: "[[lang code=…]]", insert: '[[lang code="${@langCode}"]]${}[[/lang]]' },
+  { id: "hint", label: "[[hint title=…]]", insert: '[[hint title="${Hinweis}"]]${}[[/hint]]' },
+  { id: "lang", label: "[[lang code=…]]", insert: '[[lang code="${de}"]]${}[[/lang]]' },
   { id: "jsxgraph", label: "[[jsxgraph]]", insert: '[[jsxgraph width="500px" height="400px"]]\nvar board = JXG.JSXGraph.initBoard(divid, {boundingbox: [-5, 5, 5, -5], axis: true, showCopyright: false});\n${}\n[[/jsxgraph]]' },
   { id: "todo", label: "[[todo]]", insert: "[[todo]]${}[[/todo]]" },
 ];
 
-type FieldName = keyof Messages["lib"]["editor"]["field"];
-
-/** Vorlage, Kurzbeschreibung und Erläuterung eines CASText-Elements in der Sprache von `t`. */
+/** Vorlage, Kurzbeschreibung und Erläuterung eines CASText-Elements; die Texte in der Sprache von `t`. */
 export function casTextBlockText(b: CasTextSnippet, t: Translator): { label: string; insert: string; detail: string; info: string } {
   return {
     label: b.label,
-    insert: b.insert.replace(/\$\{@(\w+)\}/g, (_, f: FieldName) => `\${${t(`lib.editor.field.${f}`)}}`),
+    insert: b.insert,
     detail: t(`reference.casText.${b.id}.detail`),
     info: t(`reference.casText.${b.id}.info`),
   };

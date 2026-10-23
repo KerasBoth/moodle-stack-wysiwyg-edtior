@@ -168,15 +168,6 @@ export default {
       lambda: "Anonymná funkcia",
       mcLabel: "Odpoveď učiteľa pre výber z možností [[…,true],…]",
     },
-    field: {
-      condition: "podmienka",
-      expression: "vyraz",
-      local: "lokalna",
-      value: "hodnota{n}",
-      list: "zoznam",
-      hint: "Nápoveda",
-      langCode: "sk",
-    },
     cas: {
       inputField: "Vstupné pole",
       validation: "Validácia",

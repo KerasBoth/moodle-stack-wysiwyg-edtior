@@ -2,13 +2,14 @@
 
 import { type Msg, errorMsg } from "../i18n/index.ts";
 import { parseQuiz } from "../stack/xml.ts";
+import { UNNAMED_QUESTION } from "../filename.ts";
 
 export type XmlMeta = { ok: true; questions: string[] } | { ok: false; error: Msg };
 
 export function describeXml(content: string): XmlMeta {
   try {
     const quiz = parseQuiz(content);
-    const questions = quiz.items.flatMap((it) => (it.kind === "stack" ? [it.q.name || "(ohne Namen)"] : []));
+    const questions = quiz.items.flatMap((it) => (it.kind === "stack" ? [it.q.name || UNNAMED_QUESTION] : []));
     if (!questions.length) return { ok: false, error: { key: "server.noStackQuestion" } };
     return { ok: true, questions };
   } catch (e) {

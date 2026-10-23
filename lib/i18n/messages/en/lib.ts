@@ -168,15 +168,6 @@ export default {
       lambda: "Anonymous function",
       mcLabel: "MC teacher's answer [[…,true],…]",
     },
-    field: {
-      condition: "condition",
-      expression: "expression",
-      local: "local",
-      value: "value{n}",
-      list: "list",
-      hint: "Hint",
-      langCode: "en",
-    },
     cas: {
       inputField: "Input field",
       validation: "Validation",

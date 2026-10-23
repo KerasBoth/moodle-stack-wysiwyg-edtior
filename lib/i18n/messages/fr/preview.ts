@@ -12,7 +12,7 @@ export default {
   addVariant: "Variante",
   showSolutionTitle: "Afficher la solution détaillée sous la question",
   solution: "Solution",
-  showNotesTitle: "Afficher les notes et les notes de réponse des PRT",
+  showNotesTitle: "Afficher les points obtenus et les notes de réponse des PRT",
   notes: "Notes",
   showGeneralTitle: "Afficher le feedback général",
   generalShort: "FB gén.",

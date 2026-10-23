@@ -224,7 +224,7 @@ export default {
     end: "Koniec",
     node: "Uzol {n}",
     descriptionPlaceholder: "Popis (voliteľný)",
-    quiet: "ticho",
+    quiet: "tichý",
     quietTitle: "Potlačiť automatickú spätnú väzbu testu odpovede",
     deleteNode: "Odstrániť uzol",
     sans: "Odpoveď študenta (SAns)",

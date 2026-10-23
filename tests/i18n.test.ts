@@ -233,13 +233,14 @@ test("Referenz: CASText-Blöcke übersetzt, Code der Vorlage bleibt", () => {
       const x = casTextBlockText(b, t);
       assert.ok(x.detail.trim() && !x.detail.startsWith("reference."), `${l}: ${b.label} detail`);
       assert.ok(x.info.trim() && !x.info.startsWith("reference."), `${l}: ${b.label} info`);
-      assert.ok(!x.insert.includes("${@") && !x.insert.includes("lib.editor."), `${l}: ${x.insert}`);
+      // Vorlage samt Feldnamen ist Inhalt: in jeder Sprache gleich
+      assert.equal(x.insert, b.insert, `${l}: ${x.insert}`);
       assert.equal(x.label, b.label);
     }
     assert.ok(!t("reference.casTextHelp").startsWith("reference."), l);
   }
   const ifBlock = CASTEXT_BLOCKS.find((b) => b.label.startsWith("[[if"))!;
-  assert.equal(casTextBlockText(ifBlock, translatorFor("en")).insert, '[[if test="${condition}"]]\n${}\n[[else]]\n\n[[/if]]');
+  assert.equal(casTextBlockText(ifBlock, translatorFor("en")).insert, '[[if test="${bed}"]]\n${}\n[[else]]\n\n[[/if]]');
 });
 
 test("Antworttests: Label und Beschreibung in jeder Sprache, Name unverändert", () => {

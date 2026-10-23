@@ -63,6 +63,8 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
     const b = buildRef.current, qq = qRef.current;
     if (!b) return;
     const { prts } = evaluateAllPrts(b, qq, answers.current);
+    // Zahlen im Vorschau-Rahmen einheitlich im Format der Sprache (0,50 bzw. 0.50)
+    const num2 = (x: number) => x.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     let total = 0, max = 0;
     for (const r of prts) {
       max += r.weight;
@@ -71,7 +73,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
         total += r.score * r.weight;
         html = r.html;
         if (showNotesRef.current) {
-          const meta = t("preview.frame.prtMeta", { name: r.name, score: r.score.toFixed(2), note: r.notes.join(" | ") || "–" });
+          const meta = t("preview.frame.prtMeta", { name: r.name, score: num2(r.score), note: r.notes.join(" | ") || "–" });
           html += `<div class="stack-prt-meta">${escapeHtml(meta)}${r.approximate ? ` · ${escapeHtml(t("preview.frame.approximate"))}` : ""}</div>`;
         }
         if (r.errors.length) html += `<div class="stack-error">${r.errors.map((e) => escapeHtml(t(e))).join("<br>")}</div>`;
@@ -82,8 +84,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
     }
     const grade = Number(qq.scalars.defaultgrade) || 1;
     const score = max ? (total / max) * grade : 0;
-    const scoreText = score.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    fragment("#stack-score", `<div class="score"><b>${escapeHtml(t("preview.frame.gradeLabel"))}</b> ${escapeHtml(t("preview.frame.grade", { score: scoreText, grade }))}</div>`);
+    fragment("#stack-score", `<div class="score"><b>${escapeHtml(t("preview.frame.gradeLabel"))}</b> ${escapeHtml(t("preview.frame.grade", { score: num2(score), grade: grade.toLocaleString(locale) }))}</div>`);
     fragment("#stack-specific", qq.texts.specificfeedback.text.trim() ? `<h4>${escapeHtml(t("preview.frame.specificFeedback"))}</h4>${b.specificFeedbackHtml}` : "");
     // Feedback-Platzhalter im spezifischen Feedback erneut befüllen
     if (qq.texts.specificfeedback.text.includes("[[feedback:")) window.setTimeout(() => {
@@ -134,7 +135,8 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
     const b = buildRef.current, qq = qRef.current;
     if (!b || !ready) return;
     const grade = qq.scalars.defaultgrade || "1";
-    const penalty = Number(qq.scalars.penalty || 0) * 100;
+    const gradeText = Number.isFinite(Number(grade)) ? Number(grade).toLocaleString(locale) : grade;
+    const penaltyText = (Number(qq.scalars.penalty || 0) * 100).toLocaleString(locale, { maximumFractionDigits: 0 });
     const ta = teacherAnswers(b);
     // Texte des Vorschau-Rahmens: übersetzt und HTML-maskiert (nur Anzeige, nicht im XML)
     const tx = (key: Parameters<typeof t>[0], params?: Parameters<typeof t>[1]) => escapeHtml(t(key, params));
@@ -145,7 +147,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
       : "";
     const html = `
       <div class="que">
-        <div class="info"><span><b>${escapeHtml(qq.name)}</b></span><span>${tx("preview.frame.seed", { seed: b.seed })}</span><span>${tx("preview.frame.reachable", { grade })}</span><span>${tx("preview.frame.penalty", { penalty: penalty.toFixed(0) })}</span></div>
+        <div class="info"><span><b>${escapeHtml(qq.name)}</b></span><span>${tx("preview.frame.seed", { seed: b.seed })}</span><span>${tx("preview.frame.reachable", { grade: gradeText })}</span><span>${tx("preview.frame.penalty", { penalty: penaltyText })}</span></div>
         <div class="info"><span>${tx("preview.frame.questionNote")} ${b.noteHtml || `<i>${tx("preview.frame.empty")}</i>`}</span></div>
         <div class="content">
           <div class="formulation">${b.questionHtml}

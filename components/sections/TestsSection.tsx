@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { QTest, StackQuestion } from "@/lib/stack/model";
+import { localizeHtml } from "@/lib/stack/msghtml";
 import { buildPreview, runQuestionTests } from "@/lib/stack/preview";
 import type { SectionProps } from "../App";
 import { MaximaEditor } from "../editors/CodeEditors";
@@ -41,7 +42,7 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
     const m = new Map<string, string>();
     for (const s of q.deployedseeds) {
       try {
-        m.set(s, stripTags(buildPreview(q, Number(s)).noteHtml));
+        m.set(s, stripTags(localizeHtml(buildPreview(q, Number(s)).noteHtml, t)));
       } catch {
         m.set(s, t("common.error"));
       }
@@ -56,7 +57,7 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
     let tries = 0, added = 0;
     while (added < count && tries++ < count * 20) {
       const s = String(Math.floor(Math.random() * 2_000_000_000) + 1);
-      const note = stripTags(buildPreview(x, Number(s)).noteHtml);
+      const note = stripTags(localizeHtml(buildPreview(x, Number(s)).noteHtml, t));
       if (seen.has(note)) continue;
       seen.add(note);
       x.deployedseeds.push(s);
@@ -76,7 +77,7 @@ export default function TestsSection({ q, update, seed, setSeed }: SectionProps)
         failed: out.filter((o) => !o.passed).map((o) => t("sections.tests.failedTest", {
           testcase: o.testcase,
           rows: o.rows.filter((r) => !r.passed).map((r) => t("sections.tests.failedRow", { prt: r.prt, score: r.actualScore ?? "–", note: r.actualNote })).join(", "),
-        }) + o.inputErrors.join("; ")),
+        }) + o.inputErrors.map((e) => t(e)).join("; ")),
       };
     }));
   };

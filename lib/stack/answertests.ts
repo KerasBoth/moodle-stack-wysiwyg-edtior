@@ -5,17 +5,21 @@ import { diff, expand, freeSymbols, numericValue, truth } from "../maxima/eval.t
 import { equal, key, simplify } from "../maxima/simp.ts";
 import { toMaxima } from "../maxima/print.ts";
 import { type Expr, isNumeric, isRelation, numValue } from "../maxima/types.ts";
+import { type Msg, errorMsg } from "../i18n/index.ts";
 
 export interface AnswerTestResult {
   result: boolean;
-  /** Fehler bei der Ausführung (z. B. fehlende Option) */
-  error?: string;
-  feedback?: string;
+  /** Fehler bei der Ausführung (z. B. fehlende Option); die Oberfläche übersetzt ihn. */
+  error?: Msg;
+  /** Rückmeldung des Antworttests für die Vorschau; die Oberfläche übersetzt sie. */
+  feedback?: Msg;
   /** Test wird lokal nur angenähert */
   approximate?: boolean;
 }
 
 const SAMPLE_POINTS = 12;
+
+const NOT_A_NUMBER: Msg = { key: "lib.answertest.notANumber" };
 
 function samplePoints(vars: string[], n: number): Map<string, number>[] {
   // deterministisch, damit die Vorschau stabil bleibt
@@ -230,14 +234,14 @@ export function runAnswerTest(
         return { result: algEquiv(sa, ta), approximate: test !== "AlgEquiv" };
       case "Sets": {
         const r = algEquiv(sa, ta);
-        let feedback: string | undefined;
+        let feedback: Msg | undefined;
         if (!r && sa.k === "set" && ta.k === "set") {
           const missing = ta.items.filter((y) => !sa.items.some((x) => algEquiv(x, y)));
           const extra = sa.items.filter((x) => !ta.items.some((y) => algEquiv(x, y)));
-          feedback = [
-            missing.length ? `Es fehlen ${missing.length} Element(e).` : "",
-            extra.length ? `Folgende Elemente sind zu viel: ${extra.map(toMaxima).join(", ")}` : "",
-          ].filter(Boolean).join(" ");
+          const parts: Msg[] = [];
+          if (missing.length) parts.push({ key: "lib.answertest.missingElements", params: { count: missing.length } });
+          if (extra.length) parts.push({ key: "lib.answertest.extraElements", params: { items: extra.map(toMaxima).join(", ") } });
+          feedback = parts.length === 2 ? { key: "lib.answertest.both", params: { first: parts[0], second: parts[1] } } : parts[0];
         }
         return { result: r, feedback };
       }
@@ -264,21 +268,21 @@ export function runAnswerTest(
       case "GT":
       case "GTE": {
         const x = numericValue(sa), y = numericValue(ta);
-        if (Number.isNaN(x) || Number.isNaN(y)) return { result: false, error: "GT/GTE: numerische Werte erforderlich" };
+        if (Number.isNaN(x) || Number.isNaN(y)) return { result: false, error: { key: "lib.answertest.numericRequired" } };
         return { result: test === "GT" ? x > y : x >= y };
       }
       case "NumAbsolute":
       case "UnitsAbsolute": {
         const tol = optNumber(opt, 0.05);
         const x = numericValue(sa), y = numericValue(ta);
-        if (Number.isNaN(x)) return { result: false, feedback: "Ihre Antwort ist keine Zahl." };
+        if (Number.isNaN(x)) return { result: false, feedback: NOT_A_NUMBER };
         return { result: Math.abs(x - y) <= tol + 1e-12 };
       }
       case "NumRelative":
       case "UnitsRelative": {
         const tol = optNumber(opt, 0.05);
         const x = numericValue(sa), y = numericValue(ta);
-        if (Number.isNaN(x)) return { result: false, feedback: "Ihre Antwort ist keine Zahl." };
+        if (Number.isNaN(x)) return { result: false, feedback: NOT_A_NUMBER };
         return { result: Math.abs(x - y) <= tol * Math.abs(y) + 1e-12 };
       }
       case "NumSigFigs":
@@ -293,7 +297,7 @@ export function runAnswerTest(
         const valOk = !Number.isNaN(x) && Number(x.toPrecision(n)) === Number(y.toPrecision(n));
         return {
           result: figsOk && valOk,
-          feedback: !figsOk ? `Die Antwort sollte ${n} signifikante Stellen haben.` : undefined,
+          feedback: !figsOk ? { key: "lib.answertest.sigFigs", params: { n } } : undefined,
           approximate: test.startsWith("Units"),
         };
       }
@@ -305,7 +309,7 @@ export function runAnswerTest(
         const x = numericValue(sa), y = numericValue(ta);
         const ok = Math.abs(Number(x.toFixed(n)) - Number(y.toFixed(n))) < 1e-12;
         if (test === "NumDecPlacesWrong") return { result: ok, approximate: true };
-        return { result: dp === n && ok, feedback: dp !== n ? `Die Antwort sollte ${n} Nachkommastellen haben.` : undefined };
+        return { result: dp === n && ok, feedback: dp !== n ? { key: "lib.answertest.decimalPlaces", params: { n } } : undefined };
       }
       case "String": {
         const a = sa.k === "str" ? sa.v : toMaxima(sa), b = ta.k === "str" ? ta.v : toMaxima(ta);
@@ -331,9 +335,9 @@ export function runAnswerTest(
         return { result: best >= thr, approximate: true };
       }
       default:
-        return { result: algEquiv(sa, ta), approximate: true, error: `Antworttest ${test} wird lokal wie AlgEquiv behandelt` };
+        return { result: algEquiv(sa, ta), approximate: true, error: { key: "lib.answertest.treatedAsAlgEquiv", params: { test } } };
     }
   } catch (e) {
-    return { result: false, error: e instanceof Error ? e.message : String(e) };
+    return { result: false, error: errorMsg(e) };
   }
 }

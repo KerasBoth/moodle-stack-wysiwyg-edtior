@@ -1,5 +1,7 @@
 // Gemeinsame Ausdrucksstruktur für Parser (AST) und Auswerter (Werte).
 
+import type { Msg } from "../i18n/index.ts";
+
 export type Expr =
   | { k: "num"; n: number; d: number } // exakte rationale Zahl, d > 0
   | { k: "float"; v: number }
@@ -35,7 +37,8 @@ export interface Statement {
 }
 
 export interface ParseError {
-  message: string;
+  /** Meldung mit Schlüssel – die Oberfläche übersetzt sie. */
+  message: Msg;
   from: number;
   to: number;
   severity: "error" | "warning" | "info";

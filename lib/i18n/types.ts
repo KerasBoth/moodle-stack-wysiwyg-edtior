@@ -6,7 +6,9 @@ import type de from "./messages/de/index.ts";
 // Pluralformen nach Intl.PluralRules; „other“ ist Pflicht und Rückfall.
 // Ein Objekt mit dem Schlüssel „other“ gilt deshalb immer als Plural-Blatt, nie als Unterbereich.
 export type Plural = { one?: string; few?: string; many?: string; other: string };
-export type Params = Record<string, string | number>;
+// Ein Parameter darf selbst eine Meldung sein (z. B. die Ursache eines Fehlers); sie wird in derselben Sprache übersetzt.
+export type ParamValue = string | number | Msg;
+export type Params = { [name: string]: ParamValue };
 
 type DeMessages = typeof de;
 

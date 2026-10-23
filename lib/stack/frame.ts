@@ -1,6 +1,26 @@
 // HTML-Dokument für das Vorschau-iframe. Es wird einmal geladen und danach
 // per postMessage mit neuem Inhalt versorgt (kein Neuladen von MathJax).
 
+import { type Translator, germanT } from "../i18n/index.ts";
+
+/** Texte, die das iframe selbst anzeigt; kommen beim Laden und mit jeder „render“-Nachricht (Sprachwechsel). */
+export interface FrameTexts {
+  lang: string;
+  loading: string;
+  jsxLoadFailed: string;
+  /** mit Platzhalter {error} – das iframe setzt die Meldung von JSXGraph ein */
+  jsxError: string;
+}
+
+export function frameTexts(t: Translator, lang: string): FrameTexts {
+  return {
+    lang,
+    loading: t("lib.frame.loading"),
+    jsxLoadFailed: t("lib.frame.jsxLoadFailed"),
+    jsxError: t("lib.frame.jsxError", { error: "{error}" }),
+  };
+}
+
 export const FRAME_STYLE = `
 :root { color-scheme: light; }
 html, body { margin: 0; background: #fff; }
@@ -59,6 +79,8 @@ mjx-container[display="true"] { margin: .4em 0 !important; }
 const FRAME_SCRIPT = String.raw`
 (function () {
   var boards = [];
+  var texts = window.__stackTexts || {};
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   var send = function (msg) { parent.postMessage(Object.assign({ __stackPreview: true }, msg), "*"); };
 
   function typeset(el) {
@@ -159,7 +181,7 @@ const FRAME_SCRIPT = String.raw`
     boards.forEach(function (b) { try { JXG.JSXGraph.freeBoard(b); } catch (e) {} });
     boards = [];
     if (!blocks.length) return;
-    if (!window.JXG) { blocks.forEach(function (b) { var d = document.getElementById(b.id); if (d) d.innerHTML = '<div class="stack-error">JSXGraph konnte nicht geladen werden</div>'; }); return; }
+    if (!window.JXG) { blocks.forEach(function (b) { var d = document.getElementById(b.id); if (d) d.innerHTML = '<div class="stack-error">' + esc(texts.jsxLoadFailed) + '</div>'; }); return; }
     var origInit = JXG.JSXGraph.initBoard;
     JXG.JSXGraph.initBoard = function () { var b = origInit.apply(this, arguments); boards.push(b); return b; };
     blocks.forEach(function (b) {
@@ -170,7 +192,7 @@ const FRAME_SCRIPT = String.raw`
         fn.apply(window, [b.id, stack_jxg, JXG].concat(refIds));
       } catch (e) {
         var d = document.getElementById(b.id);
-        if (d) { var err = document.createElement("div"); err.className = "stack-error"; err.textContent = "JSXGraph-Fehler: " + e.message; d.parentNode.insertBefore(err, d.nextSibling); }
+        if (d) { var err = document.createElement("div"); err.className = "stack-error"; err.textContent = String(texts.jsxError).replace("{error}", function () { return e.message; }); d.parentNode.insertBefore(err, d.nextSibling); }
         send({ type: "jsxerror", message: String(e && e.message || e) });
       }
     });
@@ -183,6 +205,7 @@ const FRAME_SCRIPT = String.raw`
     var root = document.getElementById("root");
     if (m.type === "ping") { send({ type: "ready" }); return; }
     if (m.type === "render") {
+      if (m.texts) { texts = m.texts; document.documentElement.lang = texts.lang; }
       var scroll = document.scrollingElement.scrollTop;
       root.innerHTML = m.html;
       Object.keys(m.answers || {}).forEach(function (k) { setRawValue(k, m.answers[k]); });
@@ -202,9 +225,13 @@ const FRAME_SCRIPT = String.raw`
 })();
 `;
 
-export function buildFrameDocument(): string {
+export function buildFrameDocument(texts: FrameTexts = frameTexts(germanT, "de")): string {
+  const escAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const escText = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // JSON im <script>: „<“ maskieren, damit kein </script> den Block beendet
+  const textsJson = JSON.stringify(texts).replace(/</g, "\\u003c");
   return `<!doctype html>
-<html lang="de"><head><meta charset="utf-8">
+<html lang="${escAttr(texts.lang)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/vendor/jsxgraph/jsxgraph.css">
 <style>${FRAME_STYLE}</style>
@@ -218,7 +245,8 @@ window.MathJax = {
 </script>
 <script src="/vendor/mathjax/tex-chtml-full.js" async></script>
 <script src="/vendor/jsxgraph/jsxgraphcore.js"></script>
-</head><body><div id="root"><p style="color:#5c6670">Vorschau wird geladen …</p></div>
+</head><body><div id="root"><p style="color:#5c6670">${escText(texts.loading)}</p></div>
+<script>window.__stackTexts = ${textsJson};</script>
 <script>${FRAME_SCRIPT}</script>
 </body></html>`;
 }

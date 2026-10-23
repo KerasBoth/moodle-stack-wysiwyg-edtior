@@ -1,6 +1,6 @@
 // Liest die Namen der STACK-Aufgaben aus einer Moodle-XML-Datei (für Listen und Dashboard).
 
-import type { Msg } from "../i18n/index.ts";
+import { type Msg, errorMsg } from "../i18n/index.ts";
 import { parseQuiz } from "../stack/xml.ts";
 
 export type XmlMeta = { ok: true; questions: string[] } | { ok: false; error: Msg };
@@ -12,6 +12,7 @@ export function describeXml(content: string): XmlMeta {
     if (!questions.length) return { ok: false, error: { key: "server.noStackQuestion" } };
     return { ok: true, questions };
   } catch (e) {
-    return { ok: false, error: { key: "server.invalidXml", params: { detail: e instanceof Error ? e.message : String(e) } } };
+    // XmlError als Meldung: die API übersetzt sie in die Sprache des Anfragenden
+    return { ok: false, error: { key: "server.invalidXml", params: { detail: errorMsg(e) } } };
   }
 }

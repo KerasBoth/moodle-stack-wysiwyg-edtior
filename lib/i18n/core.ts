@@ -5,7 +5,7 @@ import { DEFAULT_LOCALE, type Locale } from "./locales.ts";
 import de from "./messages/de/index.ts";
 import type { MessageKey, Messages, Msg, Params, Plural } from "./types.ts";
 
-export type { MessageKey, Messages, Msg, Params, Plural } from "./types.ts";
+export type { MessageKey, Messages, Msg, ParamValue, Params, Plural } from "./types.ts";
 
 // Deutsch ist Pflicht (Rückfall), alle anderen Sprachen dürfen fehlen.
 export type MessagesByLocale = { de: Messages } & Partial<Record<Locale, Messages>>;
@@ -62,7 +62,48 @@ export function translateWith(
     pick(lookup(messagesByLocale[locale], key), locale, params) ??
     pick(lookup(messagesByLocale[DEFAULT_LOCALE], key), DEFAULT_LOCALE, params) ??
     key;
-  return interpolate(text, params);
+  return interpolate(text, resolveParams(messagesByLocale, locale, params));
+}
+
+// Parameter, die selbst Meldungen sind, in derselben Sprache übersetzen
+function resolveParams(messagesByLocale: MessagesByLocale, locale: Locale, params: Params | undefined): Params | undefined {
+  if (!params || !Object.values(params).some(isMsg)) return params;
+  const out: Params = {};
+  for (const [name, v] of Object.entries(params)) {
+    out[name] = isMsg(v) ? translateWith(messagesByLocale, locale, v.key, v.params) : v;
+  }
+  return out;
+}
+
+export function isMsg(v: unknown): v is Msg {
+  return typeof v === "object" && v !== null && typeof (v as Msg).key === "string";
+}
+
+// Übersetzer wie useT(): Schlüssel mit Parametern oder fertige Meldung
+export type Translator = (key: MessageKey | Msg, params?: Params) => string;
+
+// Deutsch ohne Provider – Rückfall außerhalb der Oberfläche (Tests, Vorbelegung globaler Übersetzer)
+export const germanT: Translator = (key, params) =>
+  typeof key === "string"
+    ? translateWith({ de }, DEFAULT_LOCALE, key, params)
+    : translateWith({ de }, DEFAULT_LOCALE, key.key, key.params ?? params);
+
+// Fehler beliebiger Herkunft als Meldung: LocalizedError mit Schlüssel, sonst der Text unverändert
+// (z. B. Meldungen eines externen Maxima-Servers oder der Funktion error() im Aufgabencode).
+export function errorMsg(e: unknown): Msg {
+  if (e instanceof LocalizedError) return e.msg;
+  if (isMsg(e)) return e;
+  return textMsg(e instanceof Error ? e.message : String(e));
+}
+
+// Unübersetzter Text als Meldung
+export function textMsg(text: string): Msg {
+  return { key: "lib.text", params: { text } };
+}
+
+// Text (unverändert anzeigen) oder Meldung (übersetzen) als Meldung
+export function asMsg(v: string | Msg): Msg {
+  return typeof v === "string" ? textMsg(v) : v;
 }
 
 // Fehler mit Schlüssel, damit Server/Client die Meldung in der Sprache des Nutzers zeigen können.

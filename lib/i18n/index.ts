@@ -7,5 +7,6 @@ export {
 } from "./locales.ts";
 export {
   DEFAULT_TIME_ZONE, LocalizedError, type MessageKey, type Messages, type MessagesByLocale, type Msg, type Params,
-  type Plural, formatDate, formatDateTime, translateWith,
+  type ParamValue, type Plural, type Translator, asMsg, errorMsg, formatDate, formatDateTime, germanT, isMsg, textMsg,
+  translateWith,
 } from "./core.ts";

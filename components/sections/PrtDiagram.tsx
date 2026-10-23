@@ -5,6 +5,7 @@
 // PrtTree zeichnet einen einzelnen Baum mit wahr/falsch-Zweigen.
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { asMsg } from "@/lib/i18n";
 import type { Prt, StackQuestion } from "@/lib/stack/model";
 import { layoutPrt, prtOverview } from "@/lib/stack/prtgraph";
 import { useT } from "../I18nProvider";
@@ -78,7 +79,7 @@ export function PrtOverview({ q, selected, onSelect }: { q: StackQuestion; selec
             <div key={i.name} ref={(el) => { if (el) inputEls.current.set(i.name, el); else inputEls.current.delete(i.name); }}
               className={`pmap-input${r === true ? " on" : r === false ? " off" : ""}`}
               onMouseEnter={() => setHover({ kind: "input", name: i.name })} onMouseLeave={() => setHover(null)}>
-              <span className={`pmap-label${i.label ? "" : " none"}`}>{i.label || t(i.position < 0 ? "sections.diagram.notInText" : "sections.diagram.noLabel")}</span>
+              <span className={`pmap-label${i.label ? "" : " none"}`}>{i.label ? t(asMsg(i.label)) : t(i.position < 0 ? "sections.diagram.notInText" : "sections.diagram.noLabel")}</span>
               <span className="pmap-chips">
                 <span className="tok tok-input">{i.name}</span>
                 <span className="pmap-type">{i.type}</span>

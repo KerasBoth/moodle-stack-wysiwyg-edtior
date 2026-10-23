@@ -1,6 +1,8 @@
 // Auswertung über einen echten Maxima-Server (goemaxima/MaximaPool, wie in STACK):
 // erzeugt das Maxima-Programm und liest die markierte Ausgabe wieder ein. Ohne Netzwerkzugriff, daher testbar.
 
+import { LocalizedError, type Msg } from "../i18n/index.ts";
+
 export interface CasRequest {
   questionvariables: string;
   seed: number;
@@ -12,8 +14,11 @@ export interface CasRequest {
 }
 
 export interface CasVariable { name: string; value: string; tex: string }
-export interface CasExpression { src: string; value: string; tex: string; error?: string }
-export interface CasError { statement: number; source: string; message: string }
+// Fehlertexte kommen unverändert vom Maxima-Server (Text); nur der eigene Rückfall ist eine Meldung.
+export interface CasExpression { src: string; value: string; tex: string; error?: string | Msg }
+export interface CasError { statement: number; source: string; message: string | Msg }
+
+const EVAL_FAILED: Msg = { key: "lib.maxima.evalFailed" };
 
 export interface CasResult {
   variables: CasVariable[];
@@ -108,7 +113,10 @@ export function parseOutput(output: string, req: CasRequest): CasResult {
   }
   if (!sections.some((s) => s.kind === "END")) {
     const tail = output.trim().split(/\r?\n/).slice(-6).join("\n");
-    throw new Error(`Unvollständige Antwort des Maxima-Servers${tail ? `: ${tail}` : ""}`);
+    // 502: der Maxima-Server hat keine verwertbare Antwort geliefert
+    throw tail
+      ? new LocalizedError("lib.maxima.incompleteDetail", { detail: tail }, 502)
+      : new LocalizedError("lib.maxima.incomplete", undefined, 502);
   }
   const clean = (body: string[]) => body.map((l) => l.trim()).filter(Boolean);
   const splitT = (body: string[]) => {
@@ -124,7 +132,7 @@ export function parseOutput(output: string, req: CasRequest): CasResult {
       const i = Number(s.key);
       const errAt = s.body.findIndex((l) => l.trim() === `${MARK}:ERR`);
       if (errAt >= 0) {
-        const message = clean(s.body.slice(0, errAt)).join(" ").replace(/ -- an error\. To debug this try: debugmode\(true\);/, "") || "Fehler bei der Auswertung";
+        const message = clean(s.body.slice(0, errAt)).join(" ").replace(/ -- an error\. To debug this try: debugmode\(true\);/, "") || EVAL_FAILED;
         errors.push({ statement: i, source: statements[i] ?? "", message });
       }
     } else if (s.kind === "V") {
@@ -135,7 +143,7 @@ export function parseOutput(output: string, req: CasRequest): CasResult {
       const i = Number(s.key);
       const src = req.expressions?.[i] ?? "";
       const errAt = s.body.findIndex((l) => l.trim() === `${MARK}:ERR`);
-      if (errAt >= 0) expressions.push({ src, value: "", tex: "", error: clean(s.body.slice(0, errAt)).join(" ") || "Fehler bei der Auswertung" });
+      if (errAt >= 0) expressions.push({ src, value: "", tex: "", error: clean(s.body.slice(0, errAt)).join(" ") || EVAL_FAILED });
       else expressions.push({ src, ...splitT(s.body) });
     }
   }

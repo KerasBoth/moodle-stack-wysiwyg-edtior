@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toMaxima } from "@/lib/maxima/print";
 import { escapeHtml } from "@/lib/stack/castext";
-import { buildFrameDocument } from "@/lib/stack/frame";
+import { buildFrameDocument, frameTexts } from "@/lib/stack/frame";
 import type { StackQuestion } from "@/lib/stack/model";
+import { localizeHtml } from "@/lib/stack/msghtml";
 import {
-  type PreviewBuild, type RawAnswer, evaluateAllPrts, runQuestionTests, teacherAnswers, validateInput,
+  type PreviewBuild, type RawAnswer, evaluateAllPrts, issueWhere, runQuestionTests, teacherAnswers, validateInput,
 } from "@/lib/stack/preview";
 import type { CasMode, CasStatus, Updater } from "./App";
 import { useLocale, useT } from "./I18nProvider";
@@ -44,13 +45,19 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
   const checkedRef = useRef(checked);
   checkedRef.current = checked;
 
-  const srcDoc = useMemo(() => buildFrameDocument(), []);
+  // Das iframe wird nur einmal geladen (Texte der Sprache beim Laden); spätere Sprachwechsel kommen mit „render“
+  const initialTexts = useRef(frameTexts(t, locale));
+  const srcDoc = useMemo(() => buildFrameDocument(initialTexts.current), []);
 
   const post = useCallback((msg: Record<string, unknown>) => {
     iframe.current?.contentWindow?.postMessage({ __stackHost: true, ...msg }, "*");
   }, []);
 
-  const fragment = useCallback((selector: string, html: string) => post({ type: "fragment", selector, html }), [post]);
+  // Meldungen der Bibliothek stehen als Marken im HTML und werden erst hier übersetzt
+  const fragment = useCallback(
+    (selector: string, html: string) => post({ type: "fragment", selector, html: localizeHtml(html, t) }),
+    [post, t],
+  );
 
   const runCheck = useCallback(() => {
     const b = buildRef.current, qq = qRef.current;
@@ -67,7 +74,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
           const meta = t("preview.frame.prtMeta", { name: r.name, score: r.score.toFixed(2), note: r.notes.join(" | ") || "–" });
           html += `<div class="stack-prt-meta">${escapeHtml(meta)}${r.approximate ? ` · ${escapeHtml(t("preview.frame.approximate"))}` : ""}</div>`;
         }
-        if (r.errors.length) html += `<div class="stack-error">${r.errors.map(escapeHtml).join("<br>")}</div>`;
+        if (r.errors.length) html += `<div class="stack-error">${r.errors.map((e) => escapeHtml(t(e))).join("<br>")}</div>`;
       } else if (r.status === "invalid") {
         html = `<div class="stack-prt incorrect">${escapeHtml(t("preview.frame.invalid"))}</div>`;
       }
@@ -154,12 +161,12 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
           ${answersTable}
         </div>
       </div>`;
-    post({ type: "render", html, jsx: b.jsx, answers: answers.current });
+    post({ type: "render", html: localizeHtml(html, t), jsx: b.jsx, answers: answers.current, texts: frameTexts(t, locale) });
     for (const [name, raw] of Object.entries(answers.current)) {
       fragment(`[data-validation="${name}"]`, validateInput(b, name, raw).html);
     }
     if (isChecked) runCheck();
-  }, [ready, showAnswers, showGeneral, post, fragment, runCheck, t]);
+  }, [ready, showAnswers, showGeneral, post, fragment, runCheck, t, locale]);
 
   useEffect(() => { renderNow(checkedRef.current); }, [build, renderNow, showNotes]);
 
@@ -264,8 +271,8 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
             {issues.length === 0 && <div className="empty">{t("preview.noIssues")}</div>}
             {issues.map((i, k) => (
               <div key={k} className={`issue ${i.severity}`}>
-                <b>{i.where}</b>
-                <span>{i.message}</span>
+                <b>{t(issueWhere(i))}</b>
+                <span>{t(i.message)}</span>
               </div>
             ))}
             <p style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("preview.localNote")}</p>
@@ -283,7 +290,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
                 <div className="th">
                   {t("preview.test", { n: tc.testcase })} <span className={tc.passed ? "pass" : "fail"}>{tc.passed ? t("preview.passed") : t("preview.failed")}</span>
                 </div>
-                {tc.inputErrors.map((e, i) => <div key={i} className="issue error" style={{ margin: 6 }}>{e}</div>)}
+                {tc.inputErrors.map((e, i) => <div key={i} className="issue error" style={{ margin: 6 }}>{t(e)}</div>)}
                 <table>
                   <thead><tr>
                     <th>{t("preview.testTable.prt")}</th><th>{t("preview.testTable.expectedScore")}</th><th>{t("preview.testTable.actualScore")}</th>
@@ -291,7 +298,7 @@ export default function Preview({ q, build, seed, setSeed, update, onNavigate, c
                   </tr></thead>
                   <tbody>
                     {tc.rows.map((r) => (
-                      <tr key={r.prt} title={r.errors.join("\n")}>
+                      <tr key={r.prt} title={r.errors.map((e) => t(e)).join("\n")}>
                         <td className="mono">{r.prt}</td>
                         <td>{r.expectedScore || "–"}</td>
                         <td>{r.actualScore === null ? "–" : r.actualScore.toFixed(2)}</td>

@@ -8,7 +8,21 @@ import { useEffect, useMemo, useRef } from "react";
 import { forceLinting } from "@codemirror/lint";
 import { acceptCompletion } from "@codemirror/autocomplete";
 import { casTextExtensions } from "@/lib/editor/castext";
+import { editorContext } from "@/lib/editor/context";
 import { type ExternalDiagnostic, maximaExtensions } from "@/lib/editor/maxima";
+import { useT } from "../I18nProvider";
+
+/**
+ * Übersetzer der Oberfläche für Hinweise, Vervollständigung und Fehlermarken der Code-Editoren.
+ * Nach einem Sprachwechsel werden die Fehlermarken neu berechnet; Inhalt und Cursor bleiben.
+ */
+function useEditorLanguage(view: React.RefObject<EditorView | null>) {
+  const t = useT();
+  editorContext.t = t;
+  useEffect(() => {
+    if (view.current) forceLinting(view.current);
+  }, [t, view]);
+}
 
 const blockSetup: BasicSetupOptions = {
   lineNumbers: true,
@@ -57,6 +71,7 @@ export function MaximaEditor({ value, onChange, mode = "block", minHeight, maxHe
   const diagRef = useRef<ExternalDiagnostic[]>([]);
   diagRef.current = diagnostics ?? [];
   const viewRef = useRef<EditorView | null>(null);
+  useEditorLanguage(viewRef);
   const diagKey = JSON.stringify(diagnostics ?? []);
   useEffect(() => {
     if (viewRef.current) forceLinting(viewRef.current);
@@ -97,6 +112,8 @@ interface CasProps {
 }
 
 export function CasTextEditor({ value, onChange, minHeight, maxHeight, placeholder, compact, onView }: CasProps) {
+  const viewRef = useRef<EditorView | null>(null);
+  useEditorLanguage(viewRef);
   const extensions = useMemo(
     () => [
       tabAccepts,
@@ -115,7 +132,7 @@ export function CasTextEditor({ value, onChange, minHeight, maxHeight, placehold
         minHeight={minHeight ?? "80px"}
         maxHeight={maxHeight}
         theme="light"
-        onCreateEditor={(v) => onView?.(v)}
+        onCreateEditor={(v) => { viewRef.current = v; onView?.(v); }}
       />
     </div>
   );

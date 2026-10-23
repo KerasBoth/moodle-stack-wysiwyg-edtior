@@ -1,6 +1,8 @@
 // MathJax im Hauptdokument für die gesetzte Ansicht der Formel-Kästchen im Texteditor. Unabhängig von der Vorschau:
 // Der Vorschau-iframe (lib/stack/frame.ts) lädt sein eigenes MathJax in seinem eigenen Fenster.
 
+import { LocalizedError } from "../i18n/index.ts";
+
 const SRC = "/vendor/mathjax/tex-svg.js";
 
 interface MathJaxApi {
@@ -54,7 +56,10 @@ export function renderTex(tex: string, display: boolean): Promise<SVGElement | H
     return next;
   }).then((node) => {
     const error = node.querySelector('[data-mml-node="merror"]');
-    if (error) throw new Error(error.getAttribute("data-mjx-error") ?? "TeX-Fehler");
+    if (error) {
+      const detail = error.getAttribute("data-mjx-error");
+      throw detail ? new Error(detail) : new LocalizedError("lib.editor.texError");
+    }
     return node;
   });
 }

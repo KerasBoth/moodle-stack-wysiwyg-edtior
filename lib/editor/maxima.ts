@@ -9,6 +9,7 @@ import { type EditorState, type Extension, StateField } from "@codemirror/state"
 import { EditorView, type Tooltip, hoverTooltip, showTooltip } from "@codemirror/view";
 import { parseExpression, parseStatements, MaximaSyntaxError } from "../maxima/parser.ts";
 import { DOC_BY_NAME, FUNCTION_DOCS, type FnDoc, MAXIMA_KEYWORDS } from "../stack/docs.ts";
+import type { Msg } from "../i18n/index.ts";
 import { editorContext } from "./context.ts";
 
 // ---- Syntaxhervorhebung ---------------------------------------------------------
@@ -76,8 +77,9 @@ export function renderDoc(doc: FnDoc): HTMLElement {
   el.appendChild(desc);
   const ret = document.createElement("div");
   ret.className = "cm-stack-doc-ret";
-  ret.innerHTML = "<b>Rückgabe:</b> ";
-  ret.appendChild(document.createTextNode(doc.returns));
+  const label = document.createElement("b");
+  label.textContent = editorContext.t("lib.editor.returns");
+  ret.append(label, " ", doc.returns);
   el.appendChild(ret);
   if (doc.example) {
     const ex = document.createElement("pre");
@@ -93,7 +95,7 @@ function renderVar(name: string, value: string): HTMLElement {
   el.className = "cm-stack-doc";
   const sig = document.createElement("div");
   sig.className = "cm-stack-doc-sig";
-  sig.textContent = `${name} (Variable)`;
+  sig.textContent = editorContext.t("lib.editor.variable", { name });
   el.appendChild(sig);
   const v = document.createElement("pre");
   v.className = "cm-stack-doc-ex";
@@ -101,20 +103,28 @@ function renderVar(name: string, value: string): HTMLElement {
   el.appendChild(v);
   const hint = document.createElement("div");
   hint.className = "cm-stack-doc-desc";
-  hint.textContent = "Wert in der aktuellen Vorschau-Variante";
+  hint.textContent = editorContext.t("lib.editor.variableHint");
   el.appendChild(hint);
   return el;
 }
 
 // ---- Autovervollständigung ------------------------------------------------------------------
 
-const FUNCTION_SNIPPETS: Completion[] = [
-  snippetCompletion("if ${bedingung} then ${a} else ${b}", { label: "if … then … else", type: "keyword", detail: "Bedingung", boost: -1 }),
-  snippetCompletion("block([${lokal}],\n  ${}\n)", { label: "block([…], …)", type: "keyword", detail: "Block mit lokalen Variablen", boost: -1 }),
-  snippetCompletion("makelist(${ausdruck}, ${i}, ${1}, ${n})", { label: "makelist(…, i, a, b)", type: "function", detail: "Liste erzeugen", boost: -1 }),
-  snippetCompletion("lambda([${x}], ${ausdruck})", { label: "lambda([x], …)", type: "function", detail: "Anonyme Funktion", boost: -1 }),
-  snippetCompletion("[[${wert1}, true], [${wert2}, false]]", { label: "MC-Musterlösung [[…,true],…]", type: "text", detail: "dropdown/radio/checkbox", boost: -2 }),
-];
+// Vorlagen in der Sprache der Oberfläche (Feldnamen sind nur Platzhalter zum Überschreiben)
+function functionSnippets(): Completion[] {
+  const t = editorContext.t;
+  const cond = t("lib.editor.field.condition"), expr = t("lib.editor.field.expression");
+  return [
+    snippetCompletion(`if \${${cond}} then \${a} else \${b}`, { label: "if … then … else", type: "keyword", detail: t("lib.editor.snippet.condition"), boost: -1 }),
+    snippetCompletion(`block([\${${t("lib.editor.field.local")}}],\n  \${}\n)`, { label: "block([…], …)", type: "keyword", detail: t("lib.editor.snippet.block"), boost: -1 }),
+    snippetCompletion(`makelist(\${${expr}}, \${i}, \${1}, \${n})`, { label: "makelist(…, i, a, b)", type: "function", detail: t("lib.editor.snippet.makelist"), boost: -1 }),
+    snippetCompletion(`lambda([\${x}], \${${expr}})`, { label: "lambda([x], …)", type: "function", detail: t("lib.editor.snippet.lambda"), boost: -1 }),
+    snippetCompletion(
+      `[[\${${t("lib.editor.field.value", { n: 1 })}}, true], [\${${t("lib.editor.field.value", { n: 2 })}}, false]]`,
+      { label: t("lib.editor.snippet.mcLabel"), type: "text", detail: "dropdown/radio/checkbox", boost: -2 },
+    ),
+  ];
+}
 
 function variableCompletions(): Completion[] {
   const { variables, functions, inputs } = editorContext.current;
@@ -125,8 +135,9 @@ function variableCompletions(): Completion[] {
     info: () => renderVar(v.name, v.value),
     boost: 5,
   }));
-  for (const f of functions) out.push({ label: f, type: "function", detail: "eigene Funktion", apply: `${f}(`, boost: 4 });
-  for (const i of inputs) out.push({ label: i, type: "property", detail: "Eingabe (Schülerantwort)", boost: 3 });
+  const t = editorContext.t;
+  for (const f of functions) out.push({ label: f, type: "function", detail: t("lib.editor.ownFunction"), apply: `${f}(`, boost: 4 });
+  for (const i of inputs) out.push({ label: i, type: "property", detail: t("lib.editor.inputDetail"), boost: 3 });
   return out;
 }
 
@@ -153,7 +164,7 @@ export function maximaCompletionSource(ctx: CompletionContext): CompletionResult
   cachedDocs ??= docCompletions();
   return {
     from: word ? word.from : ctx.pos,
-    options: [...variableCompletions(), ...cachedDocs, ...FUNCTION_SNIPPETS],
+    options: [...variableCompletions(), ...cachedDocs, ...functionSnippets()],
     validFor: /^[A-Za-z0-9_%]*$/,
   };
 }
@@ -179,7 +190,7 @@ export function maximaHoverContent(name: string): HTMLElement | null {
   if (editorContext.current.inputs.includes(name)) {
     const el = document.createElement("div");
     el.className = "cm-stack-doc";
-    el.textContent = `${name}: Eingabe – enthält die Antwort der Studierenden (nur in PRTs/Feedback verfügbar).`;
+    el.textContent = editorContext.t("lib.editor.inputHover", { name });
     return el;
   }
   return null;
@@ -288,25 +299,26 @@ export const signatureHelp = StateField.define<Tooltip | null>({
 export interface ExternalDiagnostic {
   from: number;
   to: number;
-  message: string;
+  message: Msg;
   severity: "error" | "warning" | "info";
 }
 
 export function maximaLinter(mode: "block" | "expr", getExternal?: () => ExternalDiagnostic[]): Extension {
   return linter((view) => {
+    const t = editorContext.t;
     const src = view.state.doc.toString();
     const len = src.length;
     const out: Diagnostic[] = [];
     const clamp = (n: number) => Math.max(0, Math.min(len, n));
     if (mode === "block") {
       for (const e of parseStatements(src).errors) {
-        out.push({ from: clamp(e.from), to: clamp(Math.max(e.to, e.from)), message: e.message, severity: e.severity });
+        out.push({ from: clamp(e.from), to: clamp(Math.max(e.to, e.from)), message: t(e.message), severity: e.severity });
       }
     } else if (src.trim()) {
       try {
         parseExpression(src);
       } catch (e) {
-        if (e instanceof MaximaSyntaxError) out.push({ from: clamp(e.from), to: clamp(Math.max(e.to, e.from + 1)), message: e.message, severity: "error" });
+        if (e instanceof MaximaSyntaxError) out.push({ from: clamp(e.from), to: clamp(Math.max(e.to, e.from + 1)), message: t(e.msg), severity: "error" });
       }
     }
     const parseErrorAt = new Set(out.filter((d) => d.severity === "error").map((d) => d.from));
@@ -315,7 +327,7 @@ export function maximaLinter(mode: "block" | "expr", getExternal?: () => Externa
       // Auswertungsfehler: nur die erste Zeile der Anweisung markieren
       const from = clamp(e.from);
       const lineEnd = view.state.doc.lineAt(from).to;
-      out.push({ from, to: clamp(Math.min(Math.max(e.to, from + 1), lineEnd)), message: e.message, severity: e.severity });
+      out.push({ from, to: clamp(Math.min(Math.max(e.to, from + 1), lineEnd)), message: t(e.message), severity: e.severity });
     }
     return out;
   }, { delay: 300 });

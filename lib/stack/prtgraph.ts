@@ -1,6 +1,7 @@
 // Daten für die grafische Darstellung der Rückmeldebäume:
 // Zuordnung Teilaufgabe → Eingabe → PRT und das Layout eines einzelnen Baums.
 
+import type { Msg } from "../i18n/index.ts";
 import type { Prt, StackQuestion } from "./model.ts";
 import { usedInputs } from "./preview.ts";
 
@@ -25,7 +26,7 @@ const PART_RE = /^\(?([a-z]|\d{1,2})[).]\s/i;
  * sonst der nächste vorherige Absatz ohne eigene Eingabe. Gehört sie zu einer Teilaufgabe („c) …“),
  * wird diese vorangestellt.
  */
-function describePosition(html: string, pos: number): string {
+function describePosition(html: string, pos: number): string | Msg {
   let before = html.slice(0, pos);
   // Eingabe in einer Grafik: Beschreibung aus dem Text vor dem Block; Code-Blöcke nie als Text lesen
   const open = before.lastIndexOf("[[jsxgraph");
@@ -44,20 +45,28 @@ function describePosition(html: string, pos: number): string {
     if (!label && !/\[\[\s*input:/.test(raw)) label = text;
     if (/\[\[\s*input:/.test(raw) && PART_RE.test(text)) break; // vorherige Teilaufgabe mit eigener Eingabe
   }
-  if (inGraph) label = part ? "Grafik (JSXGraph)" : label ? `${label} › Grafik` : "Grafik (JSXGraph)";
-  let out = label;
-  if (part && label !== part && !PART_RE.test(label)) {
-    const partShort = part.length > 26 ? `${part.slice(0, 24).trimEnd()} …` : part;
-    out = `${partShort} › ${label}`;
+  const partShort = part.length > 26 ? `${part.slice(0, 24).trimEnd()} …` : part;
+  if (inGraph) {
+    // Eingabe in einer Grafik: Beschriftung als Meldung (übersetzt die Oberfläche)
+    const graph: Msg = part || !label
+      ? { key: "lib.prtgraph.graph" }
+      : { key: "lib.prtgraph.inGraph", params: { label: shorten(label, 44) } };
+    return part ? { key: "lib.prtgraph.withPart", params: { part: partShort, label: graph } } : graph;
   }
-  return out.length > 56 ? `${out.slice(0, 54).trimEnd()} …` : out;
+  let out = label;
+  if (part && label !== part && !PART_RE.test(label)) out = `${partShort} › ${label}`;
+  return shorten(out, 56);
+}
+
+function shorten(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 2).trimEnd()} …` : s;
 }
 
 export interface InputEntry {
   name: string;
   type: string;
-  /** Beschreibung aus dem Fragetext, z. B. „a) Definitionsbereich“. */
-  label: string;
+  /** Beschreibung aus dem Fragetext, z. B. „a) Definitionsbereich“; bei Eingaben in Grafiken eine Meldung. */
+  label: string | Msg;
   /** Position im Fragetext (-1 = nicht im Text). */
   position: number;
   prts: string[];

@@ -3,6 +3,7 @@
 // CodeMirror-Erweiterungen bei Bedarf gelesen.
 
 import type { EditorView } from "@codemirror/view";
+import { type Translator, germanT } from "../i18n/index.ts";
 
 export interface VariableInfo {
   name: string;
@@ -17,9 +18,15 @@ export interface EditorContextData {
   prts: string[];
 }
 
-export const editorContext: { current: EditorContextData; lastFocused: EditorView | null } = {
+export const editorContext: {
+  current: EditorContextData;
+  lastFocused: EditorView | null;
+  /** Übersetzer der Oberfläche für Hinweise, Vervollständigung und Fehlermarken der Code-Editoren. */
+  t: Translator;
+} = {
   current: { variables: [], functions: [], inputs: [], prts: [] },
   lastFocused: null,
+  t: germanT,
 };
 
 /** Fügt Text in den zuletzt fokussierten Editor ein (z. B. aus dem Referenzpanel). */

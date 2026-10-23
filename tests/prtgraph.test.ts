@@ -4,6 +4,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { defaultNode, defaultPrt, newQuestion } from "../lib/stack/model.ts";
 import { layoutPrt, prtOverview } from "../lib/stack/prtgraph.ts";
 import { parseQuiz } from "../lib/stack/xml.ts";
+import { type Msg, asMsg, germanT } from "../lib/i18n/index.ts";
+
+// Beschriftung wie in der Oberfläche (Deutsch)
+const text = (label: string | Msg) => germanT(asMsg(label));
 
 test("overview maps question parts to inputs and PRTs", () => {
   const src = readFileSync(`xml/${readdirSync("xml").find((x) => x.endsWith(".xml"))!}`, "utf8");
@@ -13,12 +17,12 @@ test("overview maps question parts to inputs and PRTs", () => {
   const o = prtOverview(it.q);
   // Reihenfolge wie im Fragetext: a) Definitionsbereich mit ans9 zuerst
   assert.equal(o.inputs[0].name, "ans9");
-  assert.match(o.inputs[0].label, /^a\) Definitionsbereich/);
-  assert.match(o.inputs.find((i) => i.name === "ans10")!.label, /^b\) Wertebereich/);
+  assert.match(text(o.inputs[0].label), /^a\) Definitionsbereich/);
+  assert.match(text(o.inputs.find((i) => i.name === "ans10")!.label), /^b\) Wertebereich/);
   // Unterpunkte bekommen ihre Teilaufgabe vorangestellt, Absätze mit anderer Eingabe werden übersprungen
   assert.equal(o.inputs.find((i) => i.name === "ans3")!.label, "c) Symmetrie › an der Stelle");
   assert.equal(o.inputs.find((i) => i.name === "ans7")!.label, "e) Monotonie");
-  assert.doesNotMatch(o.inputs.find((i) => i.name === "ans8")!.label, /board|function|\(\)/);
+  assert.doesNotMatch(text(o.inputs.find((i) => i.name === "ans8")!.label), /board|function|\(\)/);
   assert.deepEqual(o.inputs[0].prts, ["prt9"]);
   assert.equal(o.prts[0].name, "prt9");
   assert.equal(o.edges.length, o.prts.reduce((n, p) => n + p.inputs.length, 0));
@@ -28,7 +32,7 @@ test("new question: one input, one PRT, one edge", () => {
   const o = prtOverview(newQuestion());
   assert.deepEqual(o.edges, [{ input: "ans1", prt: "prt1" }]);
   // Eingabe steht allein im Absatz: Beschreibung kommt aus dem Absatz davor
-  assert.match(o.inputs[0].label, /^Berechnen Sie/);
+  assert.match(text(o.inputs[0].label), /^Berechnen Sie/);
 });
 
 test("tree layout: branches, ends and cross edges", () => {

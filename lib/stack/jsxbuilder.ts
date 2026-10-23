@@ -2,7 +2,7 @@
 // und Erzeugung des Blockcodes. Das Modell wird base64-kodiert als Kommentar im Block abgelegt,
 // damit der Editor die Grafik später wieder öffnen kann.
 
-import { LocalizedError, type MessageKey, type Msg } from "../i18n/index.ts";
+import { LocalizedError, type MessageKey, type Msg, errorMsg } from "../i18n/index.ts";
 import { parseExpression } from "../maxima/parser.ts";
 import type { Expr } from "../maxima/types.ts";
 
@@ -150,7 +150,8 @@ export function termToJs(term: string, ctx: TermContext): { js: string; dynamic:
   try {
     expr = parseExpression(src);
   } catch (e) {
-    throw new TermError("jsx.errors.unreadableTerm", { error: e instanceof Error ? e.message : String(e) });
+    // Syntaxfehler des Parsers als Meldung: wird in der Sprache der Oberfläche eingesetzt
+    throw new TermError("jsx.errors.unreadableTerm", { error: errorMsg(e) });
   }
   let dynamic = false;
   const go = (e: Expr): string => {
@@ -199,7 +200,7 @@ export function termToJs(term: string, ctx: TermContext): { js: string; dynamic:
 
 /** Meldung eines Fehlers aus termToJs (andere Fehler sollten dort nicht auftreten). */
 function termErrorMsg(err: unknown): Msg {
-  return err instanceof LocalizedError ? err.msg : { key: "jsx.errors.unreadableTerm", params: { error: err instanceof Error ? err.message : String(err) } };
+  return err instanceof LocalizedError ? err.msg : { key: "jsx.errors.unreadableTerm", params: { error: errorMsg(err) } };
 }
 
 export interface GenerateResult {

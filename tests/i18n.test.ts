@@ -161,6 +161,12 @@ test("Server-Meldung: Konflikt in der Sprache des Anfragenden, Datum erst beim �
   assert.ok(!translateMsg("en", msg).includes("2026-10-22T"), translateMsg("en", msg));
 });
 
+test("Parameter, die Meldungen sind, werden in derselben Sprache übersetzt", () => {
+  const cause = { key: "lib.eval.divisionByZero" } as const;
+  assert.equal(translate("en", "lib.at", { where: "{@a@}", error: cause }), "{@a@}: Division by 0");
+  assert.equal(new LocalizedError("lib.at", { where: "x", error: cause }).message, "x: Division durch 0");
+});
+
 test("StoreError: Schlüssel, deutsche .message, Status und Zusatzfelder", () => {
   const e = new StoreError("server.fileExists", { name: "a.xml" }, 409, { exists: true });
   assert.ok(e instanceof LocalizedError);

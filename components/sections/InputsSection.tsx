@@ -128,7 +128,7 @@ export default function InputsSection({ q, update, build }: SectionProps) {
                   setOpen(open.map((o) => (o === f.name ? n : o)));
                 }} />
               <span className="chip">{typeLabel(f.type)}</span>
-              {info?.tansError && <span className="chip err" title={info.tansError}>{t("sections.inputs.tansError")}</span>}
+              {info?.tansError && <span className="chip err" title={t(info.tansError)}>{t("sections.inputs.tansError")}</span>}
               <div className="right">
                 {open.length > 1 && (
                   <button className="btn small ghost" title={t("sections.inputs.close")} aria-label={t("sections.closeNamed", { name: f.name })}
@@ -158,7 +158,7 @@ export default function InputsSection({ q, update, build }: SectionProps) {
                     {t("sections.inputs.currentVariant", { value: toMaxima(info.tans).slice(0, 300) })}
                   </div>
                 )}
-                {info?.tansError && <div className="issue error" style={{ marginTop: 6 }}>{info.tansError}</div>}
+                {info?.tansError && <div className="issue error" style={{ marginTop: 6 }}>{t(info.tansError)}</div>}
               </Field>
               <div className="grid3">
                 <Field label={t("sections.inputs.showValidation")}>

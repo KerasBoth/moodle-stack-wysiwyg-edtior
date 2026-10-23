@@ -1,6 +1,7 @@
 // Pratt-Parser für die in STACK verwendete Maxima-Teilsprache.
 // Wie STACK selbst werden fehlende Semikolons am Zeilenende ergänzt.
 
+import { LocalizedError, type MessageKey, type Msg, type Params } from "../i18n/index.ts";
 import type { Expr, ParseError, ParseResult, Statement } from "./types.ts";
 
 export type TokType = "num" | "str" | "id" | "op" | "eof";
@@ -25,9 +26,11 @@ const OPERATORS = [
   ",", ";", "$", "(", ")", "[", "]", "{", "}", "~", "@", "|",
 ];
 
-export class MaximaSyntaxError extends Error {
-  constructor(message: string, public from: number, public to: number) {
-    super(message);
+/** Syntaxfehler mit Stelle; `.msg` für die Anzeige, `.message` bleibt deutsch. */
+export class MaximaSyntaxError extends LocalizedError {
+  constructor(key: MessageKey, params: Params | undefined, public from: number, public to: number) {
+    super(key, params);
+    this.name = "MaximaSyntaxError";
   }
 }
 
@@ -42,7 +45,7 @@ export function tokenize(src: string): Token[] {
     if (c === " " || c === "\t" || c === "\r" || c === " ") { i++; continue; }
     if (c === "/" && src[i + 1] === "*") {
       const end = src.indexOf("*/", i + 2);
-      if (end < 0) throw new MaximaSyntaxError("Kommentar wird nicht geschlossen (*/ fehlt)", i, n);
+      if (end < 0) throw new MaximaSyntaxError("lib.parser.unclosedComment", undefined, i, n);
       if (src.slice(i, end).includes("\n")) nl = true;
       i = end + 2;
       continue;
@@ -55,7 +58,7 @@ export function tokenize(src: string): Token[] {
         if (src[i] === "\\" && i + 1 < n) { s += src[i + 1]; i += 2; continue; }
         s += src[i++];
       }
-      if (i >= n) throw new MaximaSyntaxError("Zeichenkette wird nicht geschlossen (\" fehlt)", from, n);
+      if (i >= n) throw new MaximaSyntaxError("lib.parser.unclosedString", undefined, from, n);
       i++;
       toks.push({ t: "str", v: s, from, to: i, nl });
       nl = false;
@@ -85,7 +88,7 @@ export function tokenize(src: string): Token[] {
       nl = false;
       continue;
     }
-    throw new MaximaSyntaxError(`Unerwartetes Zeichen „${c}“`, i, i + 1);
+    throw new MaximaSyntaxError("lib.parser.unexpectedChar", { char: c }, i, i + 1);
   }
   toks.push({ t: "eof", v: "", from: n, to: n, nl: true });
   return toks;
@@ -120,21 +123,24 @@ class Parser {
   isKw(v: string, tok = this.peek()): boolean {
     return tok.t === "id" && tok.v === v;
   }
-  expectOp(v: string, ctx: string): Token {
+  expectOp(v: string, ctx: MessageKey): Token {
     const t = this.peek();
     if (!this.isOp(v)) {
       throw new MaximaSyntaxError(
-        `„${v}“ erwartet ${ctx}, gefunden: ${describe(t)}`,
+        "lib.parser.expected",
+        { token: v, context: { key: ctx }, found: describe(t) },
         t.from,
         Math.max(t.to, t.from + 1),
       );
     }
     return this.next();
   }
-  expectKw(v: string, ctx: string): Token {
+  expectKw(v: string, ctx: MessageKey): Token {
     const t = this.peek();
     if (!this.isKw(v)) {
-      throw new MaximaSyntaxError(`„${v}“ erwartet ${ctx}, gefunden: ${describe(t)}`, t.from, Math.max(t.to, t.from + 1));
+      throw new MaximaSyntaxError(
+        "lib.parser.expected", { token: v, context: { key: ctx }, found: describe(t) }, t.from, Math.max(t.to, t.from + 1),
+      );
     }
     return this.next();
   }
@@ -168,7 +174,7 @@ class Parser {
       case "str":
         return { k: "str", v: t.v };
       case "eof":
-        throw new MaximaSyntaxError("Unerwartetes Ende der Eingabe", t.from, t.to);
+        throw new MaximaSyntaxError("lib.parser.unexpectedEnd", undefined, t.from, t.to);
       case "id": {
         switch (t.v) {
           case "true": return { k: "bool", v: true };
@@ -182,7 +188,7 @@ class Parser {
             return this.parseFor(t);
           default:
             if (KEYWORDS.has(t.v)) {
-              throw new MaximaSyntaxError(`Schlüsselwort „${t.v}“ an dieser Stelle nicht erwartet`, t.from, t.to);
+              throw new MaximaSyntaxError("lib.parser.keywordNotExpected", { word: t.v }, t.from, t.to);
             }
             return { k: "sym", name: t.v };
         }
@@ -196,26 +202,26 @@ class Parser {
             return { k: "quote", e: this.expr(190) };
           case "(": {
             if (this.isOp(")")) {
-              throw new MaximaSyntaxError("Leere Klammer", t.from, this.peek().to);
+              throw new MaximaSyntaxError("lib.parser.emptyParens", undefined, t.from, this.peek().to);
             }
-            const items = this.commaList(")", "in Klammer");
+            const items = this.commaList(")", "lib.parser.context.parens");
             return items.length === 1 ? items[0] : { k: "seq", items };
           }
           case "[": {
-            const items = this.isOp("]") ? (this.next(), []) : this.commaList("]", "in Liste");
+            const items = this.isOp("]") ? (this.next(), []) : this.commaList("]", "lib.parser.context.list");
             return { k: "list", items };
           }
           case "{": {
-            const items = this.isOp("}") ? (this.next(), []) : this.commaList("}", "in Menge");
+            const items = this.isOp("}") ? (this.next(), []) : this.commaList("}", "lib.parser.context.set");
             return { k: "set", items };
           }
         }
       }
     }
-    throw new MaximaSyntaxError(`Unerwartetes Token ${describe(t)}`, t.from, t.to);
+    throw new MaximaSyntaxError("lib.parser.unexpectedToken", { token: describe(t) }, t.from, t.to);
   }
 
-  commaList(close: string, ctx: string): Expr[] {
+  commaList(close: string, ctx: MessageKey): Expr[] {
     const items: Expr[] = [];
     for (;;) {
       items.push(this.expr(0));
@@ -247,11 +253,11 @@ class Parser {
       case "!!":
         return { k: "op", op: v, args: [left] };
       case "(": {
-        const args = this.isOp(")") ? (this.next(), []) : this.commaList(")", "im Funktionsaufruf");
+        const args = this.isOp(")") ? (this.next(), []) : this.commaList(")", "lib.parser.context.call");
         return { k: "call", fn: left, args };
       }
       case "[": {
-        const idx = this.commaList("]", "im Index");
+        const idx = this.commaList("]", "lib.parser.context.index");
         return { k: "index", target: left, idx };
       }
       default:
@@ -264,13 +270,13 @@ class Parser {
     const thens: Expr[] = [];
     let els: Expr | null = null;
     conds.push(this.expr(45));
-    this.expectKw("then", "nach der if-Bedingung");
+    this.expectKw("then", "lib.parser.context.afterIf");
     thens.push(this.expr(45));
     for (;;) {
       if (this.isKw("elseif")) {
         this.next();
         conds.push(this.expr(45));
-        this.expectKw("then", "nach der elseif-Bedingung");
+        this.expectKw("then", "lib.parser.context.afterElseif");
         thens.push(this.expr(45));
         continue;
       }
@@ -291,7 +297,7 @@ class Parser {
     let tok: Token | null = first;
     if (first.v === "for") {
       const name = this.next();
-      if (name.t !== "id") throw new MaximaSyntaxError("Laufvariable nach „for“ erwartet", name.from, name.to);
+      if (name.t !== "id") throw new MaximaSyntaxError("lib.parser.forVariable", undefined, name.from, name.to);
       f.v = name.v;
       if (this.isOp(":")) { this.next(); f.from = this.expr(45); }
       else if (this.isKw("from")) { this.next(); f.from = this.expr(45); }
@@ -301,7 +307,7 @@ class Parser {
     for (;;) {
       const t = tok ?? this.next();
       tok = null;
-      if (t.t !== "id") throw new MaximaSyntaxError(`Unerwartetes ${describe(t)} in for-Schleife`, t.from, t.to);
+      if (t.t !== "id") throw new MaximaSyntaxError("lib.parser.unexpectedInFor", { token: describe(t) }, t.from, t.to);
       switch (t.v) {
         case "step": f.step = this.expr(45); break;
         case "thru": f.thru = this.expr(45); break;
@@ -309,16 +315,16 @@ class Parser {
         case "unless": f.unless = this.expr(45); break;
         case "do": f.body = this.expr(25); return f;
         default:
-          throw new MaximaSyntaxError(`Unerwartetes „${t.v}“ in for-Schleife`, t.from, t.to);
+          throw new MaximaSyntaxError("lib.parser.unexpectedInFor", { token: describe(t) }, t.from, t.to);
       }
     }
   }
 }
 
-function describe(t: Token): string {
-  if (t.t === "eof") return "Ende der Eingabe";
-  if (t.t === "str") return `Zeichenkette "${t.v}"`;
-  return `„${t.v}“`;
+function describe(t: Token): Msg {
+  if (t.t === "eof") return { key: "lib.parser.token.end" };
+  if (t.t === "str") return { key: "lib.parser.token.string", params: { text: t.v } };
+  return { key: "lib.parser.token.quoted", params: { text: t.v } };
 }
 
 /** Zerlegt einen ganzen Variablen-Block in Anweisungen. Bricht beim ersten Fehler nicht ab. */
@@ -330,7 +336,7 @@ export function parseStatements(src: string): ParseResult {
     toks = tokenize(src);
   } catch (e) {
     if (e instanceof MaximaSyntaxError) {
-      errors.push({ message: e.message, from: e.from, to: e.to, severity: "error" });
+      errors.push({ message: e.msg, from: e.from, to: e.to, severity: "error" });
       return { statements, errors };
     }
     throw e;
@@ -354,17 +360,17 @@ export function parseStatements(src: string): ParseResult {
       if (nt.t === "eof") continue;
       if (nt.nl) {
         errors.push({
-          message: "Fehlendes Semikolon (wird von STACK automatisch ergänzt)",
+          message: { key: "lib.parser.missingSemicolon" },
           from: endTok.to,
           to: endTok.to,
           severity: "info",
         });
         continue;
       }
-      throw new MaximaSyntaxError(`Unerwartetes ${describe(nt)} – fehlt ein Operator oder Semikolon?`, nt.from, Math.max(nt.to, nt.from + 1));
+      throw new MaximaSyntaxError("lib.parser.missingOperator", { token: describe(nt) }, nt.from, Math.max(nt.to, nt.from + 1));
     } catch (e) {
       if (!(e instanceof MaximaSyntaxError)) throw e;
-      errors.push({ message: e.message, from: e.from, to: Math.max(e.to, e.from + 1), severity: "error" });
+      errors.push({ message: e.msg, from: e.from, to: Math.max(e.to, e.from + 1), severity: "error" });
       // Bis zum nächsten Semikolon bzw. zur nächsten Zeile überspringen
       const errLine = lineOf(src, e.from);
       while (p.peek().t !== "eof") {
@@ -388,12 +394,12 @@ function lineOf(src: string, pos: number): number {
 export function parseExpression(src: string): Expr {
   const toks = tokenize(src);
   const p = new Parser(toks, src);
-  if (p.peek().t === "eof") throw new MaximaSyntaxError("Leerer Ausdruck", 0, 0);
+  if (p.peek().t === "eof") throw new MaximaSyntaxError("lib.parser.emptyExpression", undefined, 0, 0);
   const e = p.expr(0);
   while (p.isOp(";") || p.isOp("$")) p.next();
   const t = p.peek();
   if (t.t !== "eof") {
-    throw new MaximaSyntaxError(`Unerwartetes ${describe(t)} nach dem Ausdruck`, t.from, Math.max(t.to, t.from + 1));
+    throw new MaximaSyntaxError("lib.parser.afterExpression", { token: describe(t) }, t.from, Math.max(t.to, t.from + 1));
   }
   return e;
 }

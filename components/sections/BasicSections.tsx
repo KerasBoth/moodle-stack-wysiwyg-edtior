@@ -163,7 +163,7 @@ export function VariablesSection({ q, update, build, seed }: SectionProps) {
           <span className="sub">{t("sections.variables.seed", { seed })}</span>
           <div className="right">
             {build?.vars.simp === false && <span className="chip warn">simp:false</span>}
-            {(build?.vars.warnings.length ?? 0) > 0 && <span className="chip warn" title={build?.vars.warnings.join("\n")}>{t("sections.variables.hints", { count: build?.vars.warnings.length ?? 0 })}</span>}
+            {(build?.vars.warnings.length ?? 0) > 0 && <span className="chip warn" title={build?.vars.warnings.map((w) => t(w)).join("\n")}>{t("sections.variables.hints", { count: build?.vars.warnings.length ?? 0 })}</span>}
           </div>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
@@ -177,7 +177,7 @@ export function VariablesSection({ q, update, build, seed }: SectionProps) {
               </tbody>
             </table>
           ) : <div className="empty" style={{ margin: 12 }}>{t("sections.variables.empty")}</div>}
-          {build?.vars.warnings.map((w, i) => <div key={i} className="issue info" style={{ margin: 8 }}>{w}</div>)}
+          {build?.vars.warnings.map((w, i) => <div key={i} className="issue info" style={{ margin: 8 }}>{t(w)}</div>)}
         </div>
       </div>
     </div>

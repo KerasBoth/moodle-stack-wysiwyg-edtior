@@ -11,6 +11,11 @@ import { runAnswerTest } from "./answertests.ts";
 import { type JsxBlock, escapeHtml, findPlaceholders, renderCasText } from "./castext.ts";
 import type { Prt, StackInput, StackQuestion } from "./model.ts";
 import type { CasResult } from "./maximaprogram.ts";
+import { msgHtml } from "./msghtml.ts";
+import { LocalizedError, type Msg, asMsg, errorMsg } from "../i18n/index.ts";
+
+// Meldungen in HTML-Teilen der Vorschau stehen als Marke (msgHtml) und werden beim Anzeigen übersetzt
+// (localizeHtml); Meldungen in Listen (issues, errors) sind Msg und werden ebenfalls erst dort übersetzt.
 
 export type RawAnswer = string | string[] | string[][];
 
@@ -19,18 +24,31 @@ export interface InputInfo {
   type: string;
   boxsize: number;
   tans: Expr | null;
-  tansError?: string;
+  tansError?: Msg;
   /** Auswahloptionen für dropdown/radio/checkbox */
   choices?: { value: Expr; correct: boolean; label: string }[];
   matrixSize?: [number, number];
   input: StackInput;
 }
 
+/** Bereich der Aufgabe, zu dem ein Hinweis gehört (Zuordnung zur Navigation, Überschrift im Hinweis-Reiter). */
+export type IssueArea =
+  | "questionvariables" | "questiontext" | "specificfeedback" | "generalfeedback" | "questionnote" | "input" | "prt";
+
 export interface Issue {
   severity: "error" | "warning" | "info";
-  where: string;
-  message: string;
+  area: IssueArea;
+  /** Name der Eingabe bzw. des PRT (nur bei area "input"/"prt") */
+  name?: string;
+  message: Msg;
 }
+
+/** Überschrift eines Hinweises, z. B. „Eingabe ans1“. */
+export function issueWhere(i: Issue): Msg {
+  return { key: `lib.preview.area.${i.area}`, params: { name: i.name ?? "" } };
+}
+
+const at = (where: string, e: unknown): Msg => ({ key: "lib.at", params: { where, error: errorMsg(e) } });
 
 export interface PreviewBuild {
   seed: number;
@@ -82,7 +100,7 @@ function inputInfo(inp: StackInput, env: Env, p: PrintOptions): InputInfo {
   try {
     if (f.tans.trim()) info.tans = evaluate(parseExpression(f.tans), env, makeCtx(1));
   } catch (e) {
-    info.tansError = e instanceof Error ? e.message : String(e);
+    info.tansError = errorMsg(e);
   }
   if (["dropdown", "radio", "checkbox"].includes(info.type) && info.tans) {
     const t = info.tans;
@@ -98,7 +116,7 @@ function inputInfo(inp: StackInput, env: Env, p: PrintOptions): InputInfo {
         return { value, correct, label };
       });
     } else {
-      info.tansError = "Für Auswahl-Eingaben muss die Musterlösung eine Liste [[Wert, true/false, (Anzeige)], …] sein";
+      info.tansError = { key: "lib.preview.choiceListRequired" };
     }
   }
   if (info.type === "matrix" && info.tans && callName(info.tans) === "matrix" && info.tans.k === "call") {
@@ -109,6 +127,8 @@ function inputInfo(inp: StackInput, env: Env, p: PrintOptions): InputInfo {
   return info;
 }
 
+const NO_SELECTION = msgHtml({ key: "lib.preview.noSelection" });
+
 function inputWidget(info: InputInfo): string {
   const n = escapeHtml(info.name);
   const base = `data-stack-input="${n}" name="${n}"`;
@@ -116,7 +136,7 @@ function inputWidget(info: InputInfo): string {
   switch (info.type) {
     case "dropdown": {
       const opts = (info.choices ?? []).map((c, i) => `<option value="${i}">${c.label}</option>`).join("");
-      return `<select class="stack-select" ${id} ${base}><option value="">(Keine Auswahl)</option>${opts}</select>`;
+      return `<select class="stack-select" ${id} ${base}><option value="">${NO_SELECTION}</option>${opts}</select>`;
     }
     case "radio": {
       const opts = (info.choices ?? [])
@@ -131,7 +151,7 @@ function inputWidget(info: InputInfo): string {
       return `<div class="stack-choices">${opts}</div>`;
     }
     case "boolean":
-      return `<select class="stack-select" ${id} ${base}><option value="">(Keine Auswahl)</option><option value="true">Wahr</option><option value="false">Falsch</option></select>`;
+      return `<select class="stack-select" ${id} ${base}><option value="">${NO_SELECTION}</option><option value="true">${msgHtml({ key: "lib.preview.true" })}</option><option value="false">${msgHtml({ key: "lib.preview.false" })}</option></select>`;
     case "textarea":
     case "equiv":
     case "notes":
@@ -176,14 +196,19 @@ export function buildPreview(q: StackQuestion, seed: number, cas?: CasResult | n
       else vars.variables.push({ name: v.name, value, start: Number.MAX_SAFE_INTEGER, end: Number.MAX_SAFE_INTEGER });
     }
     vars.warnings = [];
-    vars.errors = cas.errors.map((e) => ({ message: `${e.source}: ${e.message}`, from: 0, to: 0, severity: "error" as const }));
-    for (const e of cas.errors) issues.push({ severity: "error", where: "Fragevariablen", message: `Maxima: ${e.source} – ${e.message}` });
-    for (const e of cas.expressions) if (e.error) issues.push({ severity: "error", where: "Fragetext", message: `Maxima: {@${e.src}@} – ${e.error}` });
+    // Fehlertexte des Maxima-Servers bleiben unverändert (asMsg)
+    vars.errors = cas.errors.map((e) => ({ message: at(e.source, asMsg(e.message)), from: 0, to: 0, severity: "error" as const }));
+    for (const e of cas.errors) {
+      issues.push({ severity: "error", area: "questionvariables", message: { key: "lib.preview.maximaError", params: { source: e.source, error: asMsg(e.message) } } });
+    }
+    for (const e of cas.expressions) {
+      if (e.error) issues.push({ severity: "error", area: "questiontext", message: { key: "lib.preview.maximaError", params: { source: `{@${e.src}@}`, error: asMsg(e.error) } } });
+    }
   } else {
     for (const e of vars.errors) {
-      if (e.severity === "error") issues.push({ severity: "error", where: "Fragevariablen", message: e.message });
+      if (e.severity === "error") issues.push({ severity: "error", area: "questionvariables", message: e.message });
     }
-    for (const w of vars.warnings) issues.push({ severity: "info", where: "Fragevariablen", message: w });
+    for (const w of vars.warnings) issues.push({ severity: "info", area: "questionvariables", message: w });
   }
   const casMap = cas ? new Map(cas.expressions.filter((e) => !e.error).map((e) => [e.src, { value: e.value, tex: e.tex }])) : undefined;
 
@@ -191,35 +216,36 @@ export function buildPreview(q: StackQuestion, seed: number, cas?: CasResult | n
   for (const inp of q.inputs) {
     const info = inputInfo(inp, env, print);
     inputs[info.name] = info;
-    if (info.tansError) issues.push({ severity: "error", where: `Eingabe ${info.name}`, message: info.tansError });
+    if (info.tansError) issues.push({ severity: "error", area: "input", name: info.name, message: info.tansError });
   }
 
   const prtNames = new Set(q.prts.map((p) => p.name));
+  const missing = (m: Msg) => `<span class="stack-error">⚠ ${msgHtml(m)}</span>`;
   const placeholder = (kind: "input" | "validation" | "feedback", name: string) => {
     const n = escapeHtml(name);
     if (kind === "input") {
       const info = inputs[name];
-      if (!info) return `<span class="stack-error">⚠ Eingabe „${n}“ existiert nicht</span>`;
+      if (!info) return missing({ key: "lib.preview.inputMissing", params: { name } });
       return `<span class="stack-input-wrap">${inputWidget(info)}</span>`;
     }
     if (kind === "validation") {
-      if (!inputs[name]) return `<span class="stack-error">⚠ Eingabe „${n}“ existiert nicht</span>`;
+      if (!inputs[name]) return missing({ key: "lib.preview.inputMissing", params: { name } });
       return `<div class="stack-validation" data-validation="${n}"></div>`;
     }
-    if (!prtNames.has(name)) return `<span class="stack-error">⚠ PRT „${n}“ existiert nicht</span>`;
+    if (!prtNames.has(name)) return missing({ key: "lib.preview.prtMissing", params: { name } });
     return `<div class="stack-feedback" data-feedback="${n}"></div>`;
   };
 
   const ctx = makeCtx(seed, simp);
-  const render = (src: string, where: string, idPrefix: string) => {
+  const render = (src: string, area: IssueArea, idPrefix: string) => {
     const r = renderCasText(src, env, ctx, { print, placeholder, idPrefix, cas: casMap });
-    for (const e of r.errors) issues.push({ severity: "error", where, message: e });
+    for (const e of r.errors) issues.push({ severity: "error", area, message: e });
     return r;
   };
-  const qt = render(q.texts.questiontext.text, "Fragetext", "qt");
-  const sf = render(q.texts.specificfeedback.text, "Spezifisches Feedback", "sf");
-  const gf = render(q.texts.generalfeedback.text, "Allgemeines Feedback", "gf");
-  const note = render(q.texts.questionnote.text, "Fragenotiz", "qn");
+  const qt = render(q.texts.questiontext.text, "questiontext", "qt");
+  const sf = render(q.texts.specificfeedback.text, "specificfeedback", "sf");
+  const gf = render(q.texts.generalfeedback.text, "generalfeedback", "gf");
+  const note = render(q.texts.questionnote.text, "questionnote", "qn");
 
   // Konsistenzprüfungen
   const allText = q.texts.questiontext.text + q.texts.specificfeedback.text;
@@ -227,22 +253,22 @@ export function buildPreview(q: StackQuestion, seed: number, cas?: CasResult | n
   for (const inp of q.inputs) {
     const name = inp.fields.name;
     if (!ph.some((p) => p.kind === "input" && p.name === name)) {
-      issues.push({ severity: "warning", where: `Eingabe ${name}`, message: `[[input:${name}]] fehlt im Fragetext` });
+      issues.push({ severity: "warning", area: "input", name, message: { key: "lib.preview.missingInText", params: { placeholder: `[[input:${name}]]` } } });
     }
     if (inp.fields.showvalidation !== "0" && !ph.some((p) => p.kind === "validation" && p.name === name)) {
-      issues.push({ severity: "warning", where: `Eingabe ${name}`, message: `[[validation:${name}]] fehlt im Fragetext` });
+      issues.push({ severity: "warning", area: "input", name, message: { key: "lib.preview.missingInText", params: { placeholder: `[[validation:${name}]]` } } });
     }
   }
   for (const p of q.prts) {
     if (!ph.some((x) => x.kind === "feedback" && x.name === p.name)) {
-      issues.push({ severity: "warning", where: `PRT ${p.name}`, message: `[[feedback:${p.name}]] fehlt in Fragetext/spez. Feedback` });
+      issues.push({ severity: "warning", area: "prt", name: p.name, message: { key: "lib.preview.missingInTextOrFeedback", params: { placeholder: `[[feedback:${p.name}]]` } } });
     }
     if (!usedInputs(p, q).length) {
-      issues.push({ severity: "warning", where: `PRT ${p.name}`, message: "PRT verwendet keine Eingabe" });
+      issues.push({ severity: "warning", area: "prt", name: p.name, message: { key: "lib.preview.prtWithoutInput" } });
     }
   }
   if (!q.texts.questionnote.text.trim() && /rand/.test(q.questionvariables)) {
-    issues.push({ severity: "info", where: "Fragenotiz", message: "Zufallsvariablen ohne Fragenotiz – STACK kann Varianten nicht unterscheiden" });
+    issues.push({ severity: "info", area: "questionnote", message: { key: "lib.preview.randomWithoutNote" } });
   }
 
   return {
@@ -320,7 +346,7 @@ export function validateInput(build: PreviewBuild, name: string, raw: RawAnswer)
   try {
     const parsed = parseExpression(src);
     if (f.forbidfloat === "1" && /\d\.\d|\d\.(?!\d)|\.\d/.test(src) && TEXT_INPUTS.has(info.type)) {
-      throw new Error("Gleitkommazahlen sind in dieser Eingabe nicht erlaubt.");
+      throw new LocalizedError("lib.preview.floatsForbidden");
     }
     // Schülerantworten dürfen keine Fragevariablen verwenden
     const used = new Set<string>();
@@ -332,28 +358,27 @@ export function validateInput(build: PreviewBuild, name: string, raw: RawAnswer)
     collect(parsed);
     const forbidden = [...used].filter((u) => build.env.vars.has(u));
     if (TEXT_INPUTS.has(info.type) && forbidden.length) {
-      throw new Error(`Verbotene Variable oder Konstante: ${forbidden.join(", ")}`);
+      throw new LocalizedError("lib.preview.forbiddenVariable", { names: forbidden.join(", ") });
     }
     const forbidWords = (f.forbidwords || "").split(",").map((w) => w.trim()).filter(Boolean);
     const bad = forbidWords.filter((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(src));
-    if (bad.length) throw new Error(`Nicht erlaubt: ${bad.join(", ")}`);
+    if (bad.length) throw new LocalizedError("lib.preview.notAllowed", { words: bad.join(", ") });
 
     const value = evaluate(parsed, new Env(), makeCtx(1, false));
     const shown = ["dropdown", "radio", "checkbox", "boolean"].includes(info.type);
     const varsUsed = [...used].filter((u) => !/^%/.test(u));
     let html = "";
     if (!shown && f.showvalidation !== "0") {
-      html = `<div class="stack-valid">Ihre letzte Antwort wurde folgendermaßen interpretiert: \\[ ${toTex(value, build.print)} \\]`;
+      html = `<div class="stack-valid">${msgHtml({ key: "lib.preview.interpreted" })} \\[ ${toTex(value, build.print)} \\]`;
       if (f.showvalidation === "1" && varsUsed.length && TEXT_INPUTS.has(info.type)) {
-        html += `<div class="stack-vars">Die in Ihrer Antwort gefundenen Variablen: \\( \\left[ ${varsUsed.join(" , ")} \\right] \\)</div>`;
+        html += `<div class="stack-vars">${msgHtml({ key: "lib.preview.variablesFound" })} \\( \\left[ ${varsUsed.join(" , ")} \\right] \\)</div>`;
       }
       html += "</div>";
     }
     return { html, valid: true, value, source: src, empty: false };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
     return {
-      html: `<div class="stack-invalid">Diese Antwort ist ungültig. ${escapeHtml(msg)}<br><code>${escapeHtml(src)}</code></div>`,
+      html: `<div class="stack-invalid">${msgHtml({ key: "lib.preview.invalidAnswer" })} ${msgHtml(errorMsg(e))}<br><code>${escapeHtml(src)}</code></div>`,
       valid: false,
       source: src,
       empty: false,
@@ -371,7 +396,7 @@ export interface PrtResult {
   weight: number;
   notes: string[];
   html: string;
-  errors: string[];
+  errors: Msg[];
   approximate: boolean;
   path: { node: string; result: boolean }[];
 }
@@ -406,7 +431,7 @@ export function evaluatePrt(
     env.vars.set(n, simp ? simplify(a.value) : a.value);
   }
   const fv = evaluateBlock(p.feedbackvariables, env, ctx);
-  for (const e of fv.errors) if (e.severity === "error") res.errors.push(`Feedback-Variablen: ${e.message}`);
+  for (const e of fv.errors) if (e.severity === "error") res.errors.push({ key: "lib.preview.feedbackVariables", params: { error: e.message } });
 
   const feedback: string[] = [];
   const byName = new Map(p.nodes.map((n) => [n.fields.name, n]));
@@ -423,7 +448,7 @@ export function evaluatePrt(
 
   while (node) {
     const nf = node.fields;
-    if (visited.has(nf.name)) { res.errors.push(`Endlosschleife bei Knoten ${nf.name}`); break; }
+    if (visited.has(nf.name)) { res.errors.push({ key: "lib.preview.endlessLoop", params: { node: nf.name } }); break; }
     visited.add(nf.name);
     let ok = false;
     try {
@@ -431,13 +456,13 @@ export function evaluatePrt(
       const ta = evaluate(parseExpression(nf.tans), env, ctx);
       const opt = nf.testoptions?.trim() ? evaluate(parseExpression(nf.testoptions), env, ctx) : null;
       const rawSa = needed.includes(nf.sans.trim()) ? answers[nf.sans.trim()]?.source : undefined;
-      const at = runAnswerTest(nf.answertest, sa, ta, opt, rawSa);
-      if (at.error) res.errors.push(`Knoten ${Number(nf.name) + 1}: ${at.error}`);
-      if (at.approximate) res.approximate = true;
-      ok = at.result;
-      if (at.feedback && nf.quiet !== "1") feedback.push(escapeHtml(at.feedback));
+      const r = runAnswerTest(nf.answertest, sa, ta, opt, rawSa);
+      if (r.error) res.errors.push({ key: "lib.preview.node", params: { node: Number(nf.name) + 1, error: r.error } });
+      if (r.approximate) res.approximate = true;
+      ok = r.result;
+      if (r.feedback && nf.quiet !== "1") feedback.push(msgHtml(r.feedback));
     } catch (e) {
-      res.errors.push(`Knoten ${Number(nf.name) + 1}: ${e instanceof Error ? e.message : e}`);
+      res.errors.push({ key: "lib.preview.node", params: { node: Number(nf.name) + 1, error: errorMsg(e) } });
       res.status = "error";
       return res;
     }
@@ -510,28 +535,30 @@ export interface QTestOutcome {
     actualScore: number | null;
     actualNote: string;
     passed: boolean;
-    errors: string[];
+    errors: Msg[];
   }[];
-  inputErrors: string[];
+  inputErrors: Msg[];
 }
+
+const PRT_NOT_FOUND: Msg = { key: "lib.preview.prtNotFound" };
 
 export function runQuestionTests(q: StackQuestion, build: PreviewBuild): QTestOutcome[] {
   return q.qtests.map((t) => {
     const answers: Record<string, { value: Expr; source: string } | null> = {};
-    const inputErrors: string[] = [];
+    const inputErrors: Msg[] = [];
     for (const inp of q.inputs) answers[inp.fields.name] = null;
     for (const ti of t.inputs) {
       try {
         const value = evaluate(parseExpression(ti.value), build.env, makeCtx(build.seed));
         answers[ti.name] = { value, source: toMaxima(value) };
       } catch (e) {
-        inputErrors.push(`${ti.name}: ${e instanceof Error ? e.message : e}`);
+        inputErrors.push(at(ti.name, e));
       }
     }
     const rows = t.expected.map((ex) => {
       const p = q.prts.find((x) => x.name === ex.name);
       if (!p) {
-        return { prt: ex.name, expectedScore: ex.expectedscore, expectedNote: ex.expectedanswernote, actualScore: null, actualNote: "", passed: false, errors: ["PRT existiert nicht"] };
+        return { prt: ex.name, expectedScore: ex.expectedscore, expectedNote: ex.expectedanswernote, actualScore: null, actualNote: "", passed: false, errors: [PRT_NOT_FOUND] };
       }
       const r = evaluatePrt(build, q, p, answers);
       const actualNote = r.status === "notanswered" ? "NULL" : r.notes[r.notes.length - 1] ?? "";

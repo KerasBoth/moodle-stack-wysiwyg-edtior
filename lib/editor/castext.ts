@@ -8,6 +8,7 @@ import { Decoration, type DecorationSet, EditorView, MatchDecorator, ViewPlugin,
 import { parseExpression, MaximaSyntaxError } from "../maxima/parser.ts";
 import { parseCasText } from "../stack/castext.ts";
 import { CASTEXT_BLOCKS } from "../stack/docs.ts";
+import type { MessageKey } from "../i18n/index.ts";
 import { editorContext } from "./context.ts";
 import { maximaCompletionSource, maximaHoverContent, signatureHelp, trackFocus, wordAt } from "./maxima.ts";
 
@@ -48,8 +49,8 @@ class JsxDataWidget extends WidgetType {
   toDOM() {
     const el = document.createElement("span");
     el.className = "cm-jsx-data";
-    el.textContent = "Grafik-Editor-Daten";
-    el.title = "Gespeicherter Stand des Grafik-Editors. Cursor in die Grafik setzen und „Grafik“ klicken, um sie zu bearbeiten.";
+    el.textContent = editorContext.t("lib.editor.cas.jsxData");
+    el.title = editorContext.t("lib.editor.cas.jsxDataTitle");
     return el;
   }
   eq() { return true; }
@@ -87,38 +88,45 @@ function inCasExpr(text: string, pos: number): boolean {
 
 function placeholderCompletions(): Completion[] {
   const { inputs, prts } = editorContext.current;
+  const t = editorContext.t;
   const out: Completion[] = [];
   for (const i of inputs) {
-    out.push({ label: `[[input:${i}]]`, type: "property", detail: "Eingabefeld", boost: 3 });
-    out.push({ label: `[[validation:${i}]]`, type: "property", detail: "Validierung", boost: 2 });
-    out.push({ label: `[[input:${i}]] [[validation:${i}]]`, type: "property", detail: "Eingabe + Validierung", boost: 4 });
+    out.push({ label: `[[input:${i}]]`, type: "property", detail: t("lib.editor.cas.inputField"), boost: 3 });
+    out.push({ label: `[[validation:${i}]]`, type: "property", detail: t("lib.editor.cas.validation"), boost: 2 });
+    out.push({ label: `[[input:${i}]] [[validation:${i}]]`, type: "property", detail: t("lib.editor.cas.inputAndValidation"), boost: 4 });
   }
-  for (const p of prts) out.push({ label: `[[feedback:${p}]]`, type: "property", detail: "PRT-Feedback", boost: 2 });
+  for (const p of prts) out.push({ label: `[[feedback:${p}]]`, type: "property", detail: t("lib.editor.cas.prtFeedback"), boost: 2 });
   for (const b of CASTEXT_BLOCKS) {
     out.push(snippetCompletion(b.insert, { label: b.label, type: "keyword", detail: b.detail, info: b.info }));
   }
-  out.push({ label: "[[/if]]", type: "keyword", detail: "Ende if" });
-  out.push({ label: "[[else]]", type: "keyword", detail: "Sonst-Zweig" });
-  out.push(snippetCompletion('[[elif test="${bed}"]]', { label: "[[elif test=…]]", type: "keyword", detail: "Weiterer Zweig" }));
+  out.push({ label: "[[/if]]", type: "keyword", detail: t("lib.editor.cas.endIf") });
+  out.push({ label: "[[else]]", type: "keyword", detail: t("lib.editor.cas.elseBranch") });
+  out.push(snippetCompletion(`[[elif test="\${${t("lib.editor.field.condition")}}"]]`, { label: "[[elif test=…]]", type: "keyword", detail: t("lib.editor.cas.elifBranch") }));
   return out;
 }
 
-const LATEX_SNIPPETS: Completion[] = [
-  snippetCompletion("\\frac{${a}}{${b}}", { label: "\\frac", detail: "Bruch", type: "text" }),
-  snippetCompletion("\\sqrt{${x}}", { label: "\\sqrt", detail: "Wurzel", type: "text" }),
-  snippetCompletion("\\left( ${} \\right)", { label: "\\left(", detail: "Klammern", type: "text" }),
-  snippetCompletion("\\cdot", { label: "\\cdot", detail: "Malpunkt", type: "text" }),
-  snippetCompletion("\\mathbb{R}", { label: "\\mathbb{R}", detail: "reelle Zahlen", type: "text" }),
-  snippetCompletion("\\infty", { label: "\\infty", detail: "unendlich", type: "text" }),
-  snippetCompletion("\\neq", { label: "\\neq", detail: "ungleich", type: "text" }),
-  snippetCompletion("\\leq", { label: "\\leq", detail: "kleiner gleich", type: "text" }),
-  snippetCompletion("\\geq", { label: "\\geq", detail: "größer gleich", type: "text" }),
-  snippetCompletion("\\int_{${a}}^{${b}} ${f} \\,\\mathrm{d}x", { label: "\\int", detail: "Integral", type: "text" }),
-  snippetCompletion("\\sum_{${i}=${1}}^{${n}} ${}", { label: "\\sum", detail: "Summe", type: "text" }),
-  snippetCompletion("\\lim_{${x} \\to ${a}} ${}", { label: "\\lim", detail: "Grenzwert", type: "text" }),
-  snippetCompletion("\\qquad", { label: "\\qquad", detail: "Abstand", type: "text" }),
-  snippetCompletion("\\text{${}}", { label: "\\text", detail: "Text im Formelmodus", type: "text" }),
+// LaTeX-Vorlagen: [Code, Beschriftung, Schlüssel der Beschreibung]
+const LATEX_SNIPPETS: [string, string, MessageKey][] = [
+  ["\\frac{${a}}{${b}}", "\\frac", "lib.editor.latex.frac"],
+  ["\\sqrt{${x}}", "\\sqrt", "lib.editor.latex.sqrt"],
+  ["\\left( ${} \\right)", "\\left(", "lib.editor.latex.parens"],
+  ["\\cdot", "\\cdot", "lib.editor.latex.cdot"],
+  ["\\mathbb{R}", "\\mathbb{R}", "lib.editor.latex.reals"],
+  ["\\infty", "\\infty", "lib.editor.latex.infty"],
+  ["\\neq", "\\neq", "lib.editor.latex.neq"],
+  ["\\leq", "\\leq", "lib.editor.latex.leq"],
+  ["\\geq", "\\geq", "lib.editor.latex.geq"],
+  ["\\int_{${a}}^{${b}} ${f} \\,\\mathrm{d}x", "\\int", "lib.editor.latex.int"],
+  ["\\sum_{${i}=${1}}^{${n}} ${}", "\\sum", "lib.editor.latex.sum"],
+  ["\\lim_{${x} \\to ${a}} ${}", "\\lim", "lib.editor.latex.lim"],
+  ["\\qquad", "\\qquad", "lib.editor.latex.qquad"],
+  ["\\text{${}}", "\\text", "lib.editor.latex.text"],
 ];
+
+function latexCompletions(): Completion[] {
+  const t = editorContext.t;
+  return LATEX_SNIPPETS.map(([insert, label, key]) => snippetCompletion(insert, { label, detail: t(key), type: "text" }));
+}
 
 function casTextCompletionSource(ctx: CompletionContext): CompletionResult | null {
   const text = ctx.state.doc.toString();
@@ -128,14 +136,16 @@ function casTextCompletionSource(ctx: CompletionContext): CompletionResult | nul
   const ph = ctx.matchBefore(/\[\[[\w:/ ="-]*$/);
   if (ph) return { from: ph.from, to: closing("]]"), options: placeholderCompletions(), validFor: /^\[\[[\w:/ ="-]*$/ };
   const tex = ctx.matchBefore(/\\[A-Za-z]*$/);
-  if (tex && (tex.text.length > 1 || ctx.explicit)) return { from: tex.from, options: LATEX_SNIPPETS, validFor: /^\\[A-Za-z]*$/ };
+  if (tex && (tex.text.length > 1 || ctx.explicit)) return { from: tex.from, options: latexCompletions(), validFor: /^\\[A-Za-z]*$/ };
   const cas = ctx.matchBefore(/\{[@#]?$/);
   if (cas) {
+    const t = editorContext.t;
     const vars = editorContext.current.variables.map((v) => ({
       label: `{@${v.name}@}`, type: "variable", detail: `= ${v.value.slice(0, 40)}`, boost: 2,
     }));
-    const raws = editorContext.current.variables.map((v) => ({ label: `{#${v.name}#}`, type: "variable", detail: "Rohwert" }));
-    return { from: cas.from, to: closing("}"), options: [...vars, ...raws, snippetCompletion("{@${ausdruck}@}", { label: "{@ … @}", detail: "LaTeX-Ausgabe" })] };
+    const raws = editorContext.current.variables.map((v) => ({ label: `{#${v.name}#}`, type: "variable", detail: t("lib.editor.cas.rawValue") }));
+    const exprSnippet = snippetCompletion(`{@\${${t("lib.editor.field.expression")}}@}`, { label: "{@ … @}", detail: t("lib.editor.cas.latexOutput") });
+    return { from: cas.from, to: closing("}"), options: [...vars, ...raws, exprSnippet] };
   }
   return null;
 }
@@ -154,6 +164,7 @@ const casHover = hoverTooltip((view, pos) => {
 // ---- Linting ------------------------------------------------------------------------------------
 
 const casLinter = linter((view) => {
+  const t = editorContext.t;
   const src = view.state.doc.toString();
   const out: Diagnostic[] = [];
   for (const m of src.matchAll(/\{@([\s\S]*?)@\}|\{#([\s\S]*?)#\}/g)) {
@@ -163,7 +174,7 @@ const casLinter = linter((view) => {
     } catch (e) {
       if (e instanceof MaximaSyntaxError) {
         const from = (m.index ?? 0) + 2 + Math.min(e.from, body.length);
-        out.push({ from, to: Math.min(src.length, Math.max(from + 1, (m.index ?? 0) + 2 + e.to)), severity: "error", message: e.message });
+        out.push({ from, to: Math.min(src.length, Math.max(from + 1, (m.index ?? 0) + 2 + e.to)), severity: "error", message: t(e.msg) });
       }
     }
   }
@@ -174,14 +185,14 @@ const casLinter = linter((view) => {
     if (!known.includes(name)) {
       out.push({
         from: m.index ?? 0, to: (m.index ?? 0) + m[0].length, severity: "warning",
-        message: kind === "feedback" ? `PRT „${name}“ ist nicht definiert` : `Eingabe „${name}“ ist nicht definiert`,
+        message: t(kind === "feedback" ? "lib.editor.cas.prtUndefined" : "lib.editor.cas.inputUndefined", { name }),
       });
     }
   }
-  for (const e of parseCasText(src).errors) out.push({ from: 0, to: Math.min(1, src.length), severity: "warning", message: e });
+  for (const e of parseCasText(src).errors) out.push({ from: 0, to: Math.min(1, src.length), severity: "warning", message: t(e) });
   // Klammerung des Formelmodus
   const opens = (src.match(/\\\(/g) ?? []).length, closes = (src.match(/\\\)/g) ?? []).length;
-  if (opens !== closes) out.push({ from: 0, to: Math.min(1, src.length), severity: "warning", message: `Formelmodus unausgeglichen: ${opens}× \\( aber ${closes}× \\)` });
+  if (opens !== closes) out.push({ from: 0, to: Math.min(1, src.length), severity: "warning", message: t("lib.editor.cas.mathUnbalanced", { opens, closes }) });
   return out;
 }, { delay: 400 });
 

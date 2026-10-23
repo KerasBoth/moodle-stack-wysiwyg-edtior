@@ -6,6 +6,7 @@ import {
   type FText, type Prt, type PrtNode, type QTest, type Quiz, type QuizItem, type StackInput, type StackQuestion,
   INPUT_FIELDS, NODE_BRANCH_FIELDS, NODE_FIELDS_BEFORE, SCALAR_FIELDS, TEXT_FIELDS, newUid,
 } from "./model.ts";
+import { LocalizedError, type MessageKey, type Msg, type Params } from "../i18n/index.ts";
 
 // ---- Mini-XML-Parser ---------------------------------------------------------
 
@@ -34,7 +35,13 @@ function decodeEntities(s: string): string {
   });
 }
 
-export class XmlError extends Error {}
+/** Fehler beim Einlesen; `.msg` für die Anzeige, `.message` bleibt deutsch. Ändert nichts am erzeugten XML. */
+export class XmlError extends LocalizedError {
+  constructor(key: MessageKey, params?: Params) {
+    super(key, params);
+    this.name = "XmlError";
+  }
+}
 
 export function parseXml(src: string): XNode {
   let i = 0;
@@ -54,14 +61,14 @@ export function parseXml(src: string): XNode {
     i = lt;
     if (src.startsWith("<!--", i)) {
       const end = src.indexOf("-->", i);
-      if (end < 0) throw new XmlError("Kommentar nicht geschlossen");
+      if (end < 0) throw new XmlError("lib.xml.commentNotClosed");
       pendingComments.push(src.slice(i + 4, end).trim());
       i = end + 3;
       continue;
     }
     if (src.startsWith("<![CDATA[", i)) {
       const end = src.indexOf("]]>", i);
-      if (end < 0) throw new XmlError("CDATA-Abschnitt nicht geschlossen");
+      if (end < 0) throw new XmlError("lib.xml.cdataNotClosed");
       top.text += src.slice(i + 9, end);
       i = end + 3;
       continue;
@@ -81,7 +88,7 @@ export function parseXml(src: string): XNode {
       const name = src.slice(i + 2, end).trim();
       const node = stack.pop();
       if (!node || node.name !== name) {
-        throw new XmlError(`Unerwartetes </${name}> (offen: <${node?.name ?? "-"}>) an Position ${i}`);
+        throw new XmlError("lib.xml.unexpectedClose", { name, open: node?.name ?? "-", pos: i });
       }
       node.end = end + 1;
       i = end + 1;
@@ -89,7 +96,7 @@ export function parseXml(src: string): XNode {
     }
     // Start-Tag
     const m = /^<([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/.exec(src.slice(i, i + 4096));
-    if (!m) throw new XmlError(`Ungültiges Tag an Position ${i}`);
+    if (!m) throw new XmlError("lib.xml.invalidTag", { pos: i });
     const attrs: Record<string, string> = {};
     for (const am of m[2].matchAll(/([\w.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
       attrs[am[1]] = decodeEntities(am[2] ?? am[3] ?? "");
@@ -100,7 +107,7 @@ export function parseXml(src: string): XNode {
     i += m[0].length;
     if (!m[3]) stack.push(node);
   }
-  if (stack.length > 1) throw new XmlError(`Element <${stack[stack.length - 1].name}> wird nicht geschlossen`);
+  if (stack.length > 1) throw new XmlError("lib.xml.notClosed", { name: stack[stack.length - 1].name });
   return root;
 }
 
@@ -202,15 +209,17 @@ export function parseQuiz(src: string): Quiz {
   if (!quiz) {
     const q = child(doc, "question");
     if (q) return { items: [itemFrom(q, src)] };
-    throw new XmlError("Kein <quiz>-Element gefunden – ist das eine Moodle-XML-Datei?");
+    throw new XmlError("lib.xml.noQuiz");
   }
   return { items: quiz.children.filter((c) => c.name === "question").map((q) => itemFrom(q, src)) };
 }
 
 function itemFrom(q: XNode, src: string): QuizItem {
   if (q.attrs.type === "stack") return { kind: "stack", q: parseStackQuestion(q, src) };
-  const label =
-    q.attrs.type === "category" ? `Kategorie: ${childText(q, "category")}` : `${q.attrs.type ?? "?"}: ${childText(q, "name")}`;
+  // Beschriftung nur für die Anzeige; ins XML geht unverändert `xml`
+  const label: Msg = q.attrs.type === "category"
+    ? { key: "lib.xml.categoryLabel", params: { name: childText(q, "category") } }
+    : { key: "lib.xml.otherLabel", params: { type: q.attrs.type ?? "?", name: childText(q, "name") } };
   return { kind: "raw", xml: src.slice(q.start, q.end), label, comment: q.comments.join(" ") };
 }
 

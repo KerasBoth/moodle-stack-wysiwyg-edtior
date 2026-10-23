@@ -9,8 +9,17 @@ import {
 } from "./simp.ts";
 import { parseExpression, parseStatements } from "./parser.ts";
 import { toMaxima } from "./print.ts";
+import { LocalizedError, type MessageKey, type Msg, type Params, errorMsg } from "../i18n/index.ts";
 
-export class MaximaError extends Error {}
+/** Auswertungsfehler; `.msg` für die Anzeige, `.message` bleibt deutsch. */
+export class MaximaError extends LocalizedError {
+  constructor(key: MessageKey, params?: Params) {
+    super(key, params);
+    this.name = "MaximaError";
+  }
+}
+
+const INDEX: Msg = { key: "lib.eval.index" };
 
 // ---- Zufall -----------------------------------------------------------------
 
@@ -72,35 +81,40 @@ export class Env {
 export interface Ctx {
   rng: () => number;
   simp: boolean;
-  warnings: Set<string>;
+  /** Hinweise der lokalen Vorschau, je Meldung einmal (Schlüssel: JSON der Meldung). */
+  warnings: Map<string, Msg>;
   steps: number;
   depth: number;
 }
 
 export function makeCtx(seed: number, simp = true): Ctx {
-  return { rng: seededRng(seed), simp, warnings: new Set(), steps: 0, depth: 0 };
+  return { rng: seededRng(seed), simp, warnings: new Map(), steps: 0, depth: 0 };
+}
+
+function warn(ctx: Ctx, m: Msg) {
+  ctx.warnings.set(JSON.stringify(m), m);
 }
 
 const MAX_STEPS = 500_000;
 
 // ---- Hilfsfunktionen ----------------------------------------------------------
 
-const asInt = (e: Expr, fn: string): number => {
+const asInt = (e: Expr, fn: string | Msg): number => {
   if (e.k === "num" && e.d === 1) return e.n;
   if (e.k === "float" && Number.isInteger(e.v)) return e.v;
-  throw new MaximaError(`${fn}: ganze Zahl erwartet, erhalten: ${toMaxima(e)}`);
+  throw new MaximaError("lib.eval.intExpected", { fn, got: toMaxima(e) });
 };
 const asList = (e: Expr, fn: string): Expr[] => {
   if (e.k === "list" || e.k === "set") return e.items;
-  throw new MaximaError(`${fn}: Liste erwartet, erhalten: ${toMaxima(e)}`);
+  throw new MaximaError("lib.eval.listExpected", { fn, got: toMaxima(e) });
 };
 const asStr = (e: Expr, fn: string): string => {
   if (e.k === "str") return e.v;
-  throw new MaximaError(`${fn}: Zeichenkette erwartet, erhalten: ${toMaxima(e)}`);
+  throw new MaximaError("lib.eval.stringExpected", { fn, got: toMaxima(e) });
 };
 const asNum = (e: Expr, fn: string): number => {
   const v = numericValue(e);
-  if (Number.isNaN(v)) throw new MaximaError(`${fn}: Zahl erwartet, erhalten: ${toMaxima(e)}`);
+  if (Number.isNaN(v)) throw new MaximaError("lib.eval.numberExpected", { fn, got: toMaxima(e) });
   return v;
 };
 const sameKind = (src: Expr, items: Expr[]): Expr => (src.k === "set" ? makeSet(items) : list(items));
@@ -108,7 +122,7 @@ const sameKind = (src: Expr, items: Expr[]): Expr => (src.k === "set" ? makeSet(
 function argCount(fn: string, args: Expr[], min: number, max = min) {
   if (args.length < min || args.length > max) {
     const want = min === max ? `${min}` : `${min}–${max}`;
-    throw new MaximaError(`${fn} erwartet ${want} Argument(e), erhalten: ${args.length}`);
+    throw new MaximaError("lib.eval.argCount", { fn, want, got: args.length });
   }
 }
 
@@ -242,7 +256,7 @@ export function truth(e: Expr): boolean | null {
 // ---- Auswertung --------------------------------------------------------------
 
 export function evaluate(e: Expr, env: Env, ctx: Ctx): Expr {
-  if (++ctx.steps > MAX_STEPS) throw new MaximaError("Abbruch: zu viele Rechenschritte (Endlosschleife?)");
+  if (++ctx.steps > MAX_STEPS) throw new MaximaError("lib.eval.tooManySteps");
   switch (e.k) {
     case "num": case "float": case "str": case "bool":
       return e;
@@ -273,7 +287,7 @@ export function evaluate(e: Expr, env: Env, ctx: Ctx): Expr {
         const c = evaluate(e.conds[i], env, ctx);
         const t = truth(c);
         if (t === null) {
-          throw new MaximaError(`if-Bedingung lässt sich nicht entscheiden: ${toMaxima(c)}`);
+          throw new MaximaError("lib.eval.ifUndecidable", { cond: toMaxima(c) });
         }
         if (t) return evaluate(e.thens[i], env, ctx);
       }
@@ -290,21 +304,21 @@ export function evaluate(e: Expr, env: Env, ctx: Ctx): Expr {
 
 function indexInto(t: Expr, idx: Expr[], orig: Expr): Expr {
   if (t.k === "list" && idx.length >= 1) {
-    const i = asInt(idx[0], "Index");
+    const i = asInt(idx[0], INDEX);
     if (i < 1 || i > t.items.length) {
-      throw new MaximaError(`Index ${i} außerhalb der Liste der Länge ${t.items.length}`);
+      throw new MaximaError("lib.eval.indexOutOfList", { i, length: t.items.length });
     }
     const v = t.items[i - 1];
     return idx.length > 1 ? indexInto(v, idx.slice(1), orig) : v;
   }
   if (callName(t) === "matrix" && t.k === "call") {
-    const i = asInt(idx[0], "Index");
+    const i = asInt(idx[0], INDEX);
     const row = t.args[i - 1];
-    if (!row) throw new MaximaError(`Zeilenindex ${i} außerhalb der Matrix`);
+    if (!row) throw new MaximaError("lib.eval.rowOutOfMatrix", { i });
     return idx.length > 1 ? indexInto(row, idx.slice(1), orig) : row;
   }
   if (t.k === "sym") return { k: "index", target: t, idx };
-  throw new MaximaError(`Indizierung nicht möglich: ${toMaxima(t)}`);
+  throw new MaximaError("lib.eval.notIndexable", { expr: toMaxima(t) });
 }
 
 function evalFor(e: Extract<Expr, { k: "for" }>, env: Env, ctx: Ctx): Expr {
@@ -339,7 +353,7 @@ function evalFor(e: Extract<Expr, { k: "for" }>, env: Env, ctx: Ctx): Expr {
     const r = evaluate(e.body, local, ctx);
     if (callName(r) === "return") return (r as { args: Expr[] }).args[0] ?? bool(true);
     cur = add([cur, step]);
-    if (++guard > 100_000) throw new MaximaError("for-Schleife: zu viele Durchläufe");
+    if (++guard > 100_000) throw new MaximaError("lib.eval.forTooMany");
   }
   return sym("done");
 }
@@ -371,28 +385,28 @@ function evalOp(e: Extract<Expr, { k: "op" }>, env: Env, ctx: Ctx): Expr {
       const cur = env.lookup(lhs.target.name);
       const idx = lhs.idx.map((x) => evaluate(x, env, ctx));
       if (cur && cur.k === "list") {
-        const i = asInt(idx[0], "Index");
+        const i = asInt(idx[0], INDEX);
         const items = [...cur.items];
-        if (i < 1 || i > items.length) throw new MaximaError(`Index ${i} außerhalb der Liste`);
+        if (i < 1 || i > items.length) throw new MaximaError("lib.eval.indexOutOfListShort", { i });
         items[i - 1] = v;
         env.assign(lhs.target.name, list(items));
         return v;
       }
-      throw new MaximaError(`Zuweisung an ${lhs.target.name}[...] nur für Listen unterstützt`);
+      throw new MaximaError("lib.eval.indexAssignListsOnly", { name: lhs.target.name });
     }
-    throw new MaximaError(`Ungültiges Zuweisungsziel: ${toMaxima(lhs)}`);
+    throw new MaximaError("lib.eval.invalidAssignTarget", { expr: toMaxima(lhs) });
   }
   if (o === ":=") {
     const [lhs, body] = e.args;
     if (lhs.k === "call" && lhs.fn.k === "sym") {
       const params = lhs.args.map((a) => {
-        if (a.k !== "sym") throw new MaximaError("Funktionsparameter müssen Namen sein");
+        if (a.k !== "sym") throw new MaximaError("lib.eval.paramsMustBeNames");
         return a.name;
       });
       env.root().funcs.set(lhs.fn.name, { params, body });
       return lhs;
     }
-    throw new MaximaError(`Ungültige Funktionsdefinition: ${toMaxima(lhs)}`);
+    throw new MaximaError("lib.eval.invalidFunctionDef", { expr: toMaxima(lhs) });
   }
   if (o === "and" || o === "or") {
     // Kurzschlussauswertung wie Maxima
@@ -415,7 +429,7 @@ function evalOp(e: Extract<Expr, { k: "op" }>, env: Env, ctx: Ctx): Expr {
   }
   if (["+", "*", "-", "/", "^", "neg"].includes(o)) {
     if (args.some((a) => a.k === "str")) {
-      throw new MaximaError(`Rechenoperation „${o === "neg" ? "-" : o}“ mit Zeichenkette nicht möglich`);
+      throw new MaximaError("lib.eval.stringArithmetic", { op: o === "neg" ? "-" : o });
     }
     return arith(o, args, ctx);
   }
@@ -430,9 +444,9 @@ function evalOp(e: Extract<Expr, { k: "op" }>, env: Env, ctx: Ctx): Expr {
 
 function applyFunction(f: UserFunction, args: Expr[], env: Env, ctx: Ctx, name: string): Expr {
   if (args.length !== f.params.length) {
-    throw new MaximaError(`${name} erwartet ${f.params.length} Argument(e), erhalten: ${args.length}`);
+    throw new MaximaError("lib.eval.argCount", { fn: name, want: f.params.length, got: args.length });
   }
-  if (++ctx.depth > 200) throw new MaximaError("Rekursion zu tief");
+  if (++ctx.depth > 200) throw new MaximaError("lib.eval.recursionTooDeep");
   const local = new Env(env.root());
   f.params.forEach((p, i) => local.vars.set(p, args[i]));
   try {
@@ -465,7 +479,7 @@ export function applyAny(fn: Expr, args: Expr[], env: Env, ctx: Ctx): Expr {
   if (fn.k === "sym") {
     return evalCall({ k: "call", fn, args: args.map((a) => ({ k: "quote", e: a }) as Expr) }, env, ctx);
   }
-  throw new MaximaError(`Nicht aufrufbar: ${toMaxima(fn)}`);
+  throw new MaximaError("lib.eval.notCallable", { expr: toMaxima(fn) });
 }
 
 function evalCall(e: Extract<Expr, { k: "call" }>, env: Env, ctx: Ctx): Expr {
@@ -488,7 +502,7 @@ function evalCall(e: Extract<Expr, { k: "call" }>, env: Env, ctx: Ctx): Expr {
   const builtin = BUILTINS[name];
   if (builtin) return builtin(args, ctx, env);
   if (!KNOWN_SYMBOLIC.has(name)) {
-    ctx.warnings.add(`Funktion „${name}“ wird in der lokalen Vorschau nicht ausgewertet`);
+    warn(ctx, { key: "lib.eval.notEvaluatedLocally", params: { name } });
   }
   return { k: "call", fn: e.fn, args };
 }
@@ -507,7 +521,7 @@ type Special = (raw: Expr[], env: Env, ctx: Ctx) => Expr;
 
 function iterValues(spec: Expr[], env: Env, ctx: Ctx, fn: string): { v: string; values: Expr[] } {
   const [vRaw, a, b, step] = spec;
-  if (!vRaw || vRaw.k !== "sym") throw new MaximaError(`${fn}: Laufvariable erwartet`);
+  if (!vRaw || vRaw.k !== "sym") throw new MaximaError("lib.eval.loopVariableExpected", { fn });
   if (b === undefined) {
     const l = evaluate(a, env, ctx);
     if (l.k === "num") {
@@ -521,7 +535,7 @@ function iterValues(spec: Expr[], env: Env, ctx: Ctx, fn: string): { v: string; 
   const st = step ? evaluate(step, env, ctx) : ONE;
   const values: Expr[] = [];
   const s = asNum(st, fn);
-  if (s === 0) throw new MaximaError(`${fn}: Schrittweite 0`);
+  if (s === 0) throw new MaximaError("lib.eval.zeroStep", { fn });
   let cur = from;
   for (let i = 0; i < 100_000; i++) {
     const c = asNum(cur, fn), t = asNum(to, fn);
@@ -632,7 +646,7 @@ const SPECIAL: Record<string, Special> = {
       env.root().funcs.set(lhs.fn.name, { params, body: evaluate(body, env, ctx) });
       return lhs;
     }
-    throw new MaximaError("define: Funktionskopf erwartet");
+    throw new MaximaError("lib.eval.defineHeadExpected");
   },
   subst(raw, env, ctx) {
     const args = raw.map((r) => evaluate(r, env, ctx));
@@ -645,7 +659,7 @@ const SPECIAL: Record<string, Special> = {
       argCount("subst", args, 2);
       const eqs = args[0].k === "list" ? args[0].items : [args[0]];
       pairs = eqs.map((q) => {
-        if (q.k !== "op" || q.op !== "=") throw new MaximaError("subst: Gleichung a=b erwartet");
+        if (q.k !== "op" || q.op !== "=") throw new MaximaError("lib.eval.substEquationExpected");
         return [q.args[0], q.args[1]];
       });
       target = args[1];
@@ -698,7 +712,7 @@ export function expand(e: Expr): Expr {
         let r: Expr = ONE;
         for (const f of e.args.map(expand)) {
           r = distribute(r, f);
-          if (r.k === "op" && r.args.length > 5000) throw new MaximaError("expand: Ausdruck zu groß");
+          if (r.k === "op" && r.args.length > 5000) throw new MaximaError("lib.eval.expandTooLarge");
         }
         return r;
       }
@@ -902,24 +916,24 @@ const BUILTINS: Record<string, Builtin> = {
     argCount("rand", args, 1);
     const a = args[0];
     if (a.k === "num" && a.d === 1) {
-      if (a.n <= 0) throw new MaximaError("rand: Argument muss positiv sein");
+      if (a.n <= 0) throw new MaximaError("lib.eval.randPositive");
       return int(Math.floor(ctx.rng() * a.n));
     }
     if (a.k === "float") return flt(ctx.rng() * a.v);
     if (a.k === "list" || a.k === "set") {
-      if (!a.items.length) throw new MaximaError("rand: leere Liste");
+      if (!a.items.length) throw new MaximaError("lib.eval.randEmptyList");
       return a.items[Math.floor(ctx.rng() * a.items.length)];
     }
     if (callName(a) === "matrix" && a.k === "call") {
       return { k: "call", fn: a.fn, args: a.args.map((r) => list(asList(r, "rand").map((x) => BUILTINS.rand([x], ctx, null as unknown as Env)))) };
     }
-    throw new MaximaError(`rand: ungültiges Argument ${toMaxima(a)}`);
+    throw new MaximaError("lib.eval.randInvalid", { expr: toMaxima(a) });
   },
   rand_with_step(args, ctx) {
     argCount("rand_with_step", args, 3);
     const [lo, hi, st] = args;
     const n = Math.floor((asNum(hi, "rand_with_step") - asNum(lo, "rand_with_step")) / asNum(st, "rand_with_step") + 1e-9);
-    if (n < 0) throw new MaximaError("rand_with_step: untere Grenze größer als obere");
+    if (n < 0) throw new MaximaError("lib.eval.randStepBounds");
     return add([lo, mul([st, int(Math.floor(ctx.rng() * (n + 1)))])]);
   },
   rand_with_prohib(args, ctx) {
@@ -928,14 +942,14 @@ const BUILTINS: Record<string, Builtin> = {
     const prohib = asList(args[2], "rand_with_prohib").map((x) => numericValue(x));
     const choices: number[] = [];
     for (let i = lo; i <= hi; i++) if (!prohib.some((p) => Math.abs(p - i) < 1e-12)) choices.push(i);
-    if (!choices.length) throw new MaximaError("rand_with_prohib: keine zulässigen Werte");
+    if (!choices.length) throw new MaximaError("lib.eval.randProhibNone");
     return int(choices[Math.floor(ctx.rng() * choices.length)]);
   },
   rand_selection(args, ctx) {
     argCount("rand_selection", args, 2);
     const items = [...asList(args[0], "rand_selection")];
     const n = asInt(args[1], "rand_selection");
-    if (n > items.length) throw new MaximaError("rand_selection: mehr Elemente angefordert als vorhanden");
+    if (n > items.length) throw new MaximaError("lib.eval.randSelectionTooMany");
     const out: Expr[] = [];
     for (let i = 0; i < n; i++) out.push(items.splice(Math.floor(ctx.rng() * items.length), 1)[0]);
     return list(out);
@@ -1043,13 +1057,13 @@ const BUILTINS: Record<string, Builtin> = {
   factor(args, ctx) {
     const a = args[0];
     if (a.k === "num" && a.d === 1) return a;
-    ctx.warnings.add("factor() wird in der lokalen Vorschau nicht faktorisiert");
+    warn(ctx, { key: "lib.eval.factorNotLocal" });
     return a;
   },
   diff(args) {
     argCount("diff", args, 1, 3);
     const v = args[1] ?? sym("x");
-    if (v.k !== "sym") throw new MaximaError("diff: Variable erwartet");
+    if (v.k !== "sym") throw new MaximaError("lib.eval.variableExpected", { fn: "diff" });
     const n = args[2] ? asInt(args[2], "diff") : 1;
     let r = args[0];
     for (let i = 0; i < n; i++) r = diff(r, v.name);
@@ -1058,10 +1072,10 @@ const BUILTINS: Record<string, Builtin> = {
   integrate(args, ctx) {
     argCount("integrate", args, 2, 4);
     const v = args[1];
-    if (v.k !== "sym") throw new MaximaError("integrate: Variable erwartet");
+    if (v.k !== "sym") throw new MaximaError("lib.eval.variableExpected", { fn: "integrate" });
     const F = integrate(expand(args[0]), v.name);
     if (!F) {
-      ctx.warnings.add("integrate() kann diesen Ausdruck lokal nicht integrieren");
+      warn(ctx, { key: "lib.eval.integrateNotLocal" });
       return { k: "call", fn: sym("integrate"), args };
     }
     if (args.length === 4) return simplify(sub(substitute(F, v, args[3]), substitute(F, v, args[2])));
@@ -1119,7 +1133,7 @@ const BUILTINS: Record<string, Builtin> = {
     let e = args[0];
     for (const i of args.slice(1).map((x) => asInt(x, "part"))) {
       const parts = e.k === "list" || e.k === "set" ? e.items : e.k === "op" ? e.args : e.k === "call" ? e.args : null;
-      if (!parts || i < 0 || i > parts.length) throw new MaximaError("part: Index außerhalb des Ausdrucks");
+      if (!parts || i < 0 || i > parts.length) throw new MaximaError("lib.eval.partOutOfRange");
       e = i === 0 ? (e.k === "op" ? str(e.op) : e.k === "call" ? e.fn : sym("[")) : parts[i - 1];
     }
     return e;
@@ -1136,7 +1150,7 @@ const BUILTINS: Record<string, Builtin> = {
     if (e.k === "call") return e.fn;
     if (e.k === "list") return str("[");
     if (e.k === "set") return str("{");
-    throw new MaximaError("op: Argument ist kein zusammengesetzter Ausdruck");
+    throw new MaximaError("lib.eval.opNotCompound");
   },
 
   // ---- Prädikate
@@ -1162,7 +1176,7 @@ const BUILTINS: Record<string, Builtin> = {
     if (a.k === "list" || a.k === "set") return int(a.items.length);
     if (a.k === "op" || a.k === "call") return int(a.args.length);
     if (a.k === "str") return int(a.v.length);
-    throw new MaximaError(`length: Argument ist atomar: ${toMaxima(a)}`);
+    throw new MaximaError("lib.eval.lengthAtomic", { expr: toMaxima(a) });
   },
   first(a) { return nth(a[0], 1, "first"); },
   second(a) { return nth(a[0], 2, "second"); },
@@ -1171,7 +1185,7 @@ const BUILTINS: Record<string, Builtin> = {
   fifth(a) { return nth(a[0], 5, "fifth"); },
   last(a) {
     const items = partsOf(a[0], "last");
-    if (!items.length) throw new MaximaError("last: leere Liste");
+    if (!items.length) throw new MaximaError("lib.eval.lastEmpty");
     return items[items.length - 1];
   },
   rest(args) {
@@ -1302,17 +1316,18 @@ const BUILTINS: Record<string, Builtin> = {
   load() { return sym("done"); },
   kill() { return sym("done"); },
   return(args) { return { k: "call", fn: sym("return"), args }; },
-  error(args) { throw new MaximaError(args.map((a) => (a.k === "str" ? a.v : toMaxima(a))).join(" ")); },
+  // Text aus dem Aufgabencode: unverändert anzeigen
+  error(args) { throw new MaximaError("lib.text", { text: args.map((a) => (a.k === "str" ? a.v : toMaxima(a))).join(" ") }); },
 };
 
 function partsOf(e: Expr, fn: string): Expr[] {
   if (e.k === "list" || e.k === "set") return e.items;
   if (e.k === "op" || e.k === "call") return e.args;
-  throw new MaximaError(`${fn}: Liste erwartet, erhalten: ${toMaxima(e)}`);
+  throw new MaximaError("lib.eval.listExpected", { fn, got: toMaxima(e) });
 }
 function nth(e: Expr, n: number, fn: string): Expr {
   const items = partsOf(e, fn);
-  if (items.length < n) throw new MaximaError(`${fn}: Liste hat weniger als ${n} Element(e)`);
+  if (items.length < n) throw new MaximaError("lib.eval.listTooShort", { fn, n });
   return items[n - 1];
 }
 
@@ -1328,7 +1343,8 @@ export interface VariableResult {
   end: number;
 }
 export interface StatementError {
-  message: string;
+  /** Meldung mit Schlüssel – die Oberfläche übersetzt sie. */
+  message: Msg;
   from: number;
   to: number;
   severity: "error" | "warning" | "info";
@@ -1337,7 +1353,7 @@ export interface EvalResult {
   env: Env;
   variables: VariableResult[];
   errors: StatementError[];
-  warnings: string[];
+  warnings: Msg[];
   simp: boolean;
 }
 
@@ -1350,8 +1366,7 @@ export function evaluateBlock(src: string, env: Env, ctx: Ctx): { variables: Var
     try {
       evaluate(st.expr, env, ctx);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push({ message: msg, from: st.start, to: st.end, severity: "error" });
+      errors.push({ message: errorMsg(e), from: st.start, to: st.end, severity: "error" });
     }
     // Auch Zuweisungen innerhalb von if/for/block erfassen
     for (const [name, value] of env.vars) {
@@ -1369,7 +1384,7 @@ export function evaluateQuestionVariables(src: string, seed: number, simp = true
   const ctx = makeCtx(seed, simp);
   const { variables, errors } = evaluateBlock(src, env, ctx);
   variables.sort((a, b) => a.start - b.start);
-  return { env, variables, errors, warnings: [...ctx.warnings], simp: ctx.simp };
+  return { env, variables, errors, warnings: [...ctx.warnings.values()], simp: ctx.simp };
 }
 
 export { parseExpression };

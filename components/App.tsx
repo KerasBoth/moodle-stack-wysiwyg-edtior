@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toMaxima } from "@/lib/maxima/print";
 import { editorContext } from "@/lib/editor/context";
 import { type Quiz, type StackQuestion, newQuestion, newUid } from "@/lib/stack/model";
-import { type PreviewBuild, buildPreview } from "@/lib/stack/preview";
+import { type IssueArea, type PreviewBuild, buildPreview } from "@/lib/stack/preview";
 import { type CasRequest, type CasResult, casExpressions } from "@/lib/stack/maximaprogram";
 import { parseQuiz, writeQuiz } from "@/lib/stack/xml";
 import type { Category, FileFull, FileInfo, FileRole, User } from "@/lib/server/store";
@@ -22,7 +22,7 @@ import TestsSection from "./sections/TestsSection";
 import UserMenu from "./UserMenu";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { useLocale, useT } from "./I18nProvider";
-import { formatDate } from "@/lib/i18n";
+import { errorMsg, formatDate } from "@/lib/i18n";
 import SaveAsDialog from "./SaveAsDialog";
 import { isModalOpen, useDialogs } from "./Dialogs";
 import { fileNameFromTitle } from "@/lib/filename";
@@ -138,7 +138,7 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       }));
       return true;
     } catch (e) {
-      notify(t("editor.msg.xmlUnreadable", { error: e instanceof Error ? e.message : String(e) }), true);
+      notify(t("editor.msg.xmlUnreadable", { error: errorMsg(e) }), true);
       return false;
     }
   }, [notify, t]);
@@ -326,16 +326,16 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
       } catch (e) {
         if (cancelled) return;
         // Server nicht verfügbar: bei der lokalen Vorschau bleiben, Grund anzeigen
+        // Die Meldung des Servers kommt schon übersetzt (Sprache der Anfrage) und wird unverändert eingesetzt
         const msg = e instanceof Error ? e.message : String(e);
-        // „where“ bleibt der interne Bereichsname (Zuordnung zur Navigation), wie in lib/stack/preview
-        local.issues.unshift({ severity: "warning", where: "Fragevariablen", message: t("editor.msg.maximaFallback", { error: msg }) });
+        // Meldung als Msg: übersetzt erst die Anzeige, ein Sprachwechsel berechnet die Vorschau nicht neu
+        local.issues.unshift({ severity: "warning", area: "questionvariables", message: { key: "editor.msg.maximaFallback", params: { error: msg } } });
         publish({ ...local });
         setCasStatus((c) => ({ ...c, loading: false, lastError: msg }));
       }
     }, 300);
     return () => { cancelled = true; window.clearTimeout(timer); };
-    // t: nach dem Umschalten der Sprache die Meldung oben neu erzeugen
-  }, [q, seed, casMode, casStatus.configured, t]);
+  }, [q, seed, casMode, casStatus.configured]);
 
   // ---- Speichern ------------------------------------------------------------------------
 
@@ -555,19 +555,18 @@ export default function StackEditorApp({ user, initialFileId, startNew, initialC
 
   // ---- Navigation --------------------------------------------------------------------------------
 
-  const issueCount = (where: (w: string) => boolean) => {
-    const list = build?.issues.filter((i) => where(i.where)) ?? [];
+  const issueCount = (...areas: IssueArea[]) => {
+    const list = build?.issues.filter((i) => areas.includes(i.area)) ?? [];
     return { err: list.filter((i) => i.severity === "error").length, warn: list.filter((i) => i.severity === "warning").length };
   };
-  // Die Vergleiche mit `where` nutzen die internen Bereichsnamen aus lib/stack/preview (keine Anzeigetexte)
   const nav: { id: SectionId; label: string; icon: React.ReactNode; count?: number; issues?: { err: number; warn: number } }[] = q
     ? [
-        { id: "general", label: t("editor.nav.general"), icon: <IconInfo />, issues: issueCount((w) => w === "Fragenotiz") },
-        { id: "variables", label: t("editor.nav.variables"), icon: <IconVars />, issues: issueCount((w) => w === "Fragevariablen") },
-        { id: "text", label: t("editor.nav.text"), icon: <IconText />, issues: issueCount((w) => w === "Fragetext") },
-        { id: "inputs", label: t("editor.nav.inputs"), icon: <IconInput />, count: q.inputs.length, issues: issueCount((w) => w.startsWith("Eingabe")) },
-        { id: "prts", label: t("editor.nav.prts"), icon: <IconTree />, count: q.prts.length, issues: issueCount((w) => w.startsWith("PRT")) },
-        { id: "feedback", label: t("editor.nav.feedback"), icon: <IconChat />, issues: issueCount((w) => w.includes("Feedback")) },
+        { id: "general", label: t("editor.nav.general"), icon: <IconInfo />, issues: issueCount("questionnote") },
+        { id: "variables", label: t("editor.nav.variables"), icon: <IconVars />, issues: issueCount("questionvariables") },
+        { id: "text", label: t("editor.nav.text"), icon: <IconText />, issues: issueCount("questiontext") },
+        { id: "inputs", label: t("editor.nav.inputs"), icon: <IconInput />, count: q.inputs.length, issues: issueCount("input") },
+        { id: "prts", label: t("editor.nav.prts"), icon: <IconTree />, count: q.prts.length, issues: issueCount("prt") },
+        { id: "feedback", label: t("editor.nav.feedback"), icon: <IconChat />, issues: issueCount("specificfeedback", "generalfeedback") },
         { id: "options", label: t("editor.nav.options"), icon: <IconGear /> },
         { id: "tests", label: t("editor.nav.tests"), icon: <IconFlask />, count: q.qtests.length },
         { id: "xml", label: t("editor.nav.xml"), icon: <IconCode /> },

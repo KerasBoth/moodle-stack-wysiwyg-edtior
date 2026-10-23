@@ -4,6 +4,8 @@ import { type Ctx, type Env, Env as EnvClass, evaluate, truth } from "../maxima/
 import { parseExpression } from "../maxima/parser.ts";
 import { type PrintOptions, toMaxima, toTex } from "../maxima/print.ts";
 import type { Expr } from "../maxima/types.ts";
+import { LocalizedError, type Msg, errorMsg } from "../i18n/index.ts";
+import { msgHtml } from "./msghtml.ts";
 
 export interface JsxBlock {
   id: string;
@@ -25,8 +27,11 @@ export interface CasTextOptions {
 export interface CasTextResult {
   html: string;
   jsx: JsxBlock[];
-  errors: string[];
+  errors: Msg[];
 }
+
+// Ort und Fehler, z. B. „{@a@}: Division durch 0“
+const at = (where: string, e: unknown): Msg => ({ key: "lib.at", params: { where, error: errorMsg(e) } });
 
 // ---- Blockstruktur -------------------------------------------------------------
 
@@ -48,8 +53,8 @@ function parseAttrs(s: string): Record<string, string> {
   return out;
 }
 
-export function parseCasText(src: string): { nodes: Node[]; errors: string[] } {
-  const errors: string[] = [];
+export function parseCasText(src: string): { nodes: Node[]; errors: Msg[] } {
+  const errors: Msg[] = [];
   const root: Node & { t: "block" } = { t: "block", name: "#root", attrs: {}, children: [] };
   const stack: (Node & { t: "block" })[] = [root];
   let pos = 0;
@@ -69,7 +74,7 @@ export function parseCasText(src: string): { nodes: Node[]; errors: string[] } {
     if (close) {
       // Schließt den passenden offenen Block
       const idx = [...stack].reverse().findIndex((b) => b.name === name);
-      if (idx < 0) { errors.push(`[[/${name}]] ohne öffnenden Block`); continue; }
+      if (idx < 0) { errors.push({ key: "lib.castext.closeWithoutOpen", params: { name } }); continue; }
       stack.length = stack.length - idx - 1;
       continue;
     }
@@ -78,7 +83,7 @@ export function parseCasText(src: string): { nodes: Node[]; errors: string[] } {
       const closeTag = new RegExp(`\\[\\[\\s*/${name}\\s*\\]\\]`, "g");
       closeTag.lastIndex = pos;
       const cm = closeTag.exec(src);
-      if (!cm) { errors.push(`[[${name}]] wird nicht geschlossen`); top().children.push({ t: "block", name, attrs, children: [], raw: src.slice(pos) }); pos = src.length; break; }
+      if (!cm) { errors.push({ key: "lib.castext.notClosed", params: { name } }); top().children.push({ t: "block", name, attrs, children: [], raw: src.slice(pos) }); pos = src.length; break; }
       top().children.push({ t: "block", name, attrs, children: [], raw: src.slice(pos, cm.index) });
       pos = cm.index + cm[0].length;
       TAG_RE.lastIndex = pos;
@@ -86,7 +91,7 @@ export function parseCasText(src: string): { nodes: Node[]; errors: string[] } {
     }
     if (name === "else" || name === "elif") {
       const b = top();
-      if (b.name !== "if") { errors.push(`[[${name}]] außerhalb von [[if]]`); continue; }
+      if (b.name !== "if") { errors.push({ key: "lib.castext.outsideIf", params: { name } }); continue; }
       b.branches!.push({ test: name === "else" ? null : attrs.test ?? "false", children: [] });
       b.children = b.branches![b.branches!.length - 1].children;
       continue;
@@ -103,7 +108,7 @@ export function parseCasText(src: string): { nodes: Node[]; errors: string[] } {
     stack.push(block);
   }
   pushText(src.slice(pos));
-  for (const b of stack.slice(1)) errors.push(`[[${b.name}]] wird nicht geschlossen`);
+  for (const b of stack.slice(1)) errors.push({ key: "lib.castext.notClosed", params: { name: b.name } });
   return { nodes: root.children, errors };
 }
 
@@ -138,7 +143,7 @@ export function escapeHtml(s: string): string {
 class Renderer {
   mathDepth = 0; // >0: innerhalb von \( \) oder \[ \]
   jsx: JsxBlock[] = [];
-  errors: string[] = [];
+  errors: Msg[] = [];
   jsxCounter = 0;
 
   constructor(public env: Env, public ctx: Ctx, public opts: CasTextOptions) {}
@@ -165,9 +170,10 @@ class Renderer {
     }
   }
 
-  errorSpan(msg: string): string {
+  /** Fehler im HTML als Marke; die Oberfläche setzt den übersetzten Text ein (localizeHtml). */
+  errorSpan(msg: Msg): string {
     this.errors.push(msg);
-    return `<span class="stack-error" title="${escapeHtml(msg)}">⚠ ${escapeHtml(msg)}</span>`;
+    return `<span class="stack-error" title="${msgHtml(msg)}">⚠ ${msgHtml(msg)}</span>`;
   }
 
   trackMath(text: string) {
@@ -205,7 +211,7 @@ class Renderer {
           out += escapeHtml(v.k === "str" ? v.v : toMaxima(v));
         }
       } catch (e) {
-        out += this.errorSpan(`${m[0]}: ${e instanceof Error ? e.message : e}`);
+        out += this.errorSpan(at(m[0], e));
       }
     }
     const rest = text.slice(pos);
@@ -220,7 +226,7 @@ class Renderer {
         const v = this.evalExpr(src, env);
         return v.k === "str" ? JSON.stringify(v.v).slice(1, -1) : toMaxima(v);
       } catch (e) {
-        this.errors.push(`{#${src}#}: ${e instanceof Error ? e.message : e}`);
+        this.errors.push(at(`{#${src}#}`, e));
         return "NaN";
       }
     });
@@ -241,10 +247,10 @@ class Renderer {
           try {
             const v = this.evalExpr(br.test, env);
             const t = truth(v);
-            if (t === null) return this.errorSpan(`[[if test="${br.test}"]] ist weder true noch false`);
+            if (t === null) return this.errorSpan({ key: "lib.castext.ifNotBool", params: { test: br.test } });
             if (t) return this.renderNodes(br.children, env);
           } catch (e) {
-            return this.errorSpan(`[[if test="${br.test}"]]: ${e instanceof Error ? e.message : e}`);
+            return this.errorSpan(at(`[[if test="${br.test}"]]`, e));
           }
         }
         return "";
@@ -254,7 +260,7 @@ class Renderer {
         try {
           const lists = Object.entries(a).map(([k, src]) => {
             const v = this.evalExpr(src, env);
-            if (v.k !== "list" && v.k !== "set") throw new Error(`${k} ist keine Liste`);
+            if (v.k !== "list" && v.k !== "set") throw new LocalizedError("lib.castext.notAList", { name: k });
             return [k, v.items] as const;
           });
           const len = Math.min(...lists.map(([, it]) => it.length));
@@ -265,7 +271,7 @@ class Renderer {
           }
           return out;
         } catch (e) {
-          return this.errorSpan(`[[foreach]]: ${e instanceof Error ? e.message : e}`);
+          return this.errorSpan(at("[[foreach]]", e));
         }
       }
       case "define": {
@@ -273,7 +279,7 @@ class Renderer {
           try {
             env.vars.set(k, this.evalExpr(src, env));
           } catch (e) {
-            return this.errorSpan(`[[define ${k}]]: ${e instanceof Error ? e.message : e}`);
+            return this.errorSpan(at(`[[define ${k}]]`, e));
           }
         }
         return "";
@@ -285,7 +291,7 @@ class Renderer {
         return codes.includes("de") || codes.includes("other") ? this.renderNodes(n.children, env) : "";
       }
       case "hint":
-        return `<details class="stack-hint"><summary>${escapeHtml(a.title ?? "Hinweis")}</summary>${this.renderNodes(n.children, env)}</details>`;
+        return `<details class="stack-hint"><summary>${a.title !== undefined ? escapeHtml(a.title) : msgHtml({ key: "lib.castext.hint" })}</summary>${this.renderNodes(n.children, env)}</details>`;
       case "todo":
         return `<div class="stack-todo">TODO: ${this.renderNodes(n.children, env)}</div>`;
       case "debug": {
@@ -310,7 +316,7 @@ class Renderer {
       case "parsons":
       case "textdownload":
       case "javascript":
-        return `<div class="stack-unsupported">[[${n.name}]] – in der lokalen Vorschau nicht verfügbar</div>`;
+        return `<div class="stack-unsupported">${msgHtml({ key: "lib.castext.unsupported", params: { name: n.name } })}</div>`;
       default:
         // Formatierungsblöcke (markdown, htmlformat, moodleformat, demarkdown …): Inhalt durchreichen
         return this.renderNodes(n.children, env);

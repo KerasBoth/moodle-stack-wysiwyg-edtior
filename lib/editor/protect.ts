@@ -1,6 +1,7 @@
 // Geschützte Konstrukte des Texteditors: Formeln, {@…@}, [[…]], <script> usw. werden zu nicht editierbaren
 // Kästchen und beim Zurückschreiben unverändert aus dem Speicher eingesetzt. Reine String-Funktionen ohne DOM.
 
+import { type Translator, germanT } from "../i18n/index.ts";
 import { PROTECT_PATTERN, decodeEntities, parseFormula } from "./formula.ts";
 
 // Formeln zuerst (eine Formel mit {@…@} ist ein Kästchen). Kommentare werden mit erkannt, aber unverändert
@@ -16,7 +17,8 @@ export function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-export function chipFor(original: string, index: number, graphEditable = false): string {
+/** Kästchen für ein geschütztes Konstrukt; Beschriftungen in der Sprache von `t` (nur Anzeige, nicht im XML). */
+export function chipFor(original: string, index: number, graphEditable = false, t: Translator = germanT): string {
   let kind = "block";
   let label = original;
   let attrs = "";
@@ -24,23 +26,23 @@ export function chipFor(original: string, index: number, graphEditable = false):
   const formula = original.startsWith("\\") ? parseFormula(original) : null;
   if (formula) { kind = "math"; attrs = ` data-kind="${formula.kind}"`; }
   else if ((m = /^\[\[\s*input:(\w+)/.exec(original))) { kind = "input"; label = `⌨ ${m[1]}`; }
-  else if ((m = /^\[\[\s*validation:(\w+)/.exec(original))) { kind = "validation"; label = `✎ Validierung ${m[1]}`; }
-  else if ((m = /^\[\[\s*feedback:(\w+)/.exec(original))) { kind = "feedback"; label = `✓ Feedback ${m[1]}`; }
-  else if (/^\[\[\s*jsxgraph/i.test(original)) { kind = "jsx"; label = graphEditable ? "📈 JSXGraph-Grafik – Doppelklick öffnet den Grafik-Editor" : "📈 JSXGraph-Grafik (im HTML-Modus bearbeiten)"; }
-  else if (/^<script/i.test(original)) { kind = "jsx"; label = "‹script› (im HTML-Modus bearbeiten)"; }
+  else if ((m = /^\[\[\s*validation:(\w+)/.exec(original))) { kind = "validation"; label = `✎ ${t("lib.editor.chip.validation", { name: m[1] })}`; }
+  else if ((m = /^\[\[\s*feedback:(\w+)/.exec(original))) { kind = "feedback"; label = `✓ ${t("lib.editor.chip.feedback", { name: m[1] })}`; }
+  else if (/^\[\[\s*jsxgraph/i.test(original)) { kind = "jsx"; label = `📈 ${t(graphEditable ? "lib.editor.chip.graphEditable" : "lib.editor.chip.graphHtmlOnly")}`; }
+  else if (/^<script/i.test(original)) { kind = "jsx"; label = t("lib.editor.chip.scriptHtmlOnly"); }
   else if (/^<style/i.test(original)) { kind = "jsx"; label = "‹style›"; }
   else if (original.startsWith("{@") || original.startsWith("{#")) { kind = "cas"; label = original; }
-  else if (/^\[\[\s*comment/i.test(original)) { kind = "block"; label = "💬 Kommentar"; }
-  const title = kind === "cas" ? "Doppelklick zum Bearbeiten" : original.length > 300 ? `${original.slice(0, 300)}…` : original;
+  else if (/^\[\[\s*comment/i.test(original)) { kind = "block"; label = `💬 ${t("lib.editor.chip.comment")}`; }
+  const title = kind === "cas" ? t("lib.editor.chip.editTitle") : original.length > 300 ? `${original.slice(0, 300)}…` : original;
   return `<span class="vchip vchip-${kind}" contenteditable="false" data-pi="${index}"${attrs} title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
 
 /** Ersetzt die geschützten Konstrukte durch Kästchen und legt ihren Originaltext in `store` ab. */
-export function protect(src: string, store: string[], graphEditable = false): string {
+export function protect(src: string, store: string[], graphEditable = false, t: Translator = germanT): string {
   return src.replace(PROTECT_RE, (m) => {
     if (m.startsWith("<!--")) return m; // Kommentar: unverändert, kein Kästchen
     store.push(m);
-    return chipFor(m, store.length - 1, graphEditable);
+    return chipFor(m, store.length - 1, graphEditable, t);
   });
 }
 

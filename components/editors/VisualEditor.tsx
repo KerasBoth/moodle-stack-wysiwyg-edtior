@@ -118,11 +118,26 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
   useEffect(() => {
     if (!ref.current || value === lastEmitted.current) return;
     store.current = [];
-    ref.current.innerHTML = protect(value, store.current, !!onEditGraph);
+    ref.current.innerHTML = protect(value, store.current, !!onEditGraph, t);
     lastEmitted.current = value;
     fillMathChips(ref.current, store.current, formulaView);
     filledView.current = formulaView;
   }, [value]);
+
+  // Sprachwechsel: Beschriftungen der Kästchen neu setzen (Formel-Kästchen haben keine Beschriftung)
+  const chipLang = useRef(t);
+  useEffect(() => {
+    if (chipLang.current === t || !ref.current) return;
+    chipLang.current = t;
+    for (const el of ref.current.querySelectorAll<HTMLElement>(".vchip[data-pi]:not(.vchip-math)")) {
+      const i = Number(el.dataset.pi);
+      const source = store.current[i];
+      if (source === undefined) continue;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = chipFor(source, i, !!onEditGraph, t);
+      if (tpl.content.firstElementChild) el.replaceWith(tpl.content.firstElementChild);
+    }
+  }, [t, onEditGraph]);
 
   // Ansichtswechsel: nur die Darstellung der Formel-Kästchen, der Text bleibt unverändert
   useEffect(() => {
@@ -183,7 +198,7 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
   const insertProtected = (snippet: string) => {
     store.current.push(snippet);
     const i = store.current.length - 1;
-    exec("insertHTML", chipFor(snippet, i) + "&nbsp;");
+    exec("insertHTML", chipFor(snippet, i, false, t) + "&nbsp;");
     const el = ref.current?.querySelector<HTMLElement>(`.vchip-math[data-pi="${i}"]`);
     if (el) fillMathChip(el, store.current, viewRef.current);
   };
@@ -246,7 +261,7 @@ export default function VisualEditor({ value, onChange, minHeight = "300px", lea
     store.current[i] = result.source;
     // Kästchen neu aufbauen (Art und Tooltip können sich geändert haben) und gemäß Ansicht füllen
     const tpl = document.createElement("template");
-    tpl.innerHTML = chipFor(result.source, i);
+    tpl.innerHTML = chipFor(result.source, i, false, t);
     const chip = tpl.content.firstElementChild as HTMLElement;
     el.replaceWith(chip);
     fillMathChip(chip, store.current, viewRef.current);

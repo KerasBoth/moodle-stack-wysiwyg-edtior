@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { assignedNames, buildProgram, casExpressions, parseOutput, splitStatements } from "../lib/stack/maximaprogram.ts";
 import { buildPreview } from "../lib/stack/preview.ts";
 import { newQuestion } from "../lib/stack/model.ts";
+import { germanT } from "../lib/i18n/index.ts";
 
 test("statements are split outside strings, comments and brackets", () => {
   const st = splitStatements('a: 1;\nb: "x;y"$ /* c; d */ f(x) := block([t:1], t+x);\nl: [1,2];');
@@ -55,6 +56,6 @@ test("preview uses Maxima values and LaTeX when given", () => {
   assert.ok(b.questionHtml.includes(String.raw`\(TEXFROMMAXIMA\)`), b.questionHtml);
   assert.match(b.questionHtml, /a = 2/);
   assert.equal(b.vars.variables.find((v) => v.name === "l")?.value.k, "list");
-  assert.ok(!b.issues.some((i) => /nicht ausgewertet/.test(i.message)));
+  assert.ok(!b.issues.some((i) => /nicht ausgewertet/.test(germanT(i.message))));
   assert.deepEqual(casExpressions('{@l@} [[jsxgraph]]var x = {#a#};[[/jsxgraph]] {#a#} {@l@}'), ["l", "a"]);
 });

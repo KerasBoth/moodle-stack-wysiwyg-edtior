@@ -1,5 +1,6 @@
 // Algebraische Grundvereinfachung, angelehnt an Maximas simp:true.
 
+import { LocalizedError } from "../i18n/index.ts";
 import { type Expr, int, isNumeric, numValue, ONE, ZERO, callName } from "./types.ts";
 
 // ---- Rationale Zahlen ------------------------------------------------------
@@ -13,7 +14,7 @@ function gcd(a: number, b: number): number {
 export { gcd };
 
 export function rat(n: number, d = 1): Expr {
-  if (d === 0) throw new EvalError("Division durch 0");
+  if (d === 0) throw new LocalizedError("lib.eval.divisionByZero");
   if (!Number.isSafeInteger(n) || !Number.isSafeInteger(d)) return { k: "float", v: n / d };
   if (d < 0) { n = -n; d = -d; }
   const g = gcd(n, d) || 1;
@@ -167,7 +168,7 @@ function elementwise(args: Expr[], f: (xs: Expr[]) => Expr): Expr {
     : 0;
   for (const a of args) {
     if (a.k === "list" && a.items.length !== len) {
-      throw new EvalError("Listen unterschiedlicher Länge können nicht verrechnet werden");
+      throw new LocalizedError("lib.eval.listLengthMismatch");
     }
   }
   const items: Expr[] = [];
@@ -258,7 +259,7 @@ export function pow(b: Expr, e: Expr): Expr {
     if (b.k === "num" && e.k === "num") {
       if (e.d === 1) {
         const ex = e.n;
-        if (b.n === 0 && ex < 0) throw new EvalError("Division durch 0 (0 hoch negative Zahl)");
+        if (b.n === 0 && ex < 0) throw new LocalizedError("lib.eval.zeroNegativePower");
         const n = intPow(b.n, Math.abs(ex));
         const d = intPow(b.d, Math.abs(ex));
         return ex >= 0 ? rat(n, d) : rat(d, n);
@@ -295,7 +296,7 @@ export function sub(a: Expr, b: Expr): Expr {
   return add([a, neg(b)]);
 }
 export function div(a: Expr, b: Expr): Expr {
-  if (isZero(b) && isNumeric(b)) throw new EvalError("Division durch 0");
+  if (isZero(b) && isNumeric(b)) throw new LocalizedError("lib.eval.divisionByZero");
   return mul([a, pow(b, int(-1))]);
 }
 

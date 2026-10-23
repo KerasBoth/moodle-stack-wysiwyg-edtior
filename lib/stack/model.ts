@@ -1,5 +1,7 @@
 // Datenmodell einer STACK-Aufgabe (Moodle-XML).
 
+import type { Msg } from "../i18n/index.ts";
+
 export interface FText {
   format: string;
   text: string;
@@ -88,7 +90,7 @@ export interface StackQuestion {
 
 export type QuizItem =
   | { kind: "stack"; q: StackQuestion }
-  | { kind: "raw"; xml: string; label: string; comment: string };
+  | { kind: "raw"; xml: string; label: Msg; comment: string };
 
 export interface Quiz {
   items: QuizItem[];
@@ -129,6 +131,7 @@ export function defaultPrt(name: string, sans = "ans1", tans = "ta1"): Prt {
   };
 }
 
+// Inhalt (ins XML), nicht übersetzen – Name, Texte und Rückmeldungen der neuen Aufgabe sind in jeder Sprache gleich
 export function newQuestion(): StackQuestion {
   return {
     uid: newUid(),

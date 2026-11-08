@@ -1,151 +1,207 @@
-# STACK-Editor für Moodle
+# STACK Editor for Moodle
 
-Lokaler Next.js-Editor für Moodle-STACK-Aufgaben (Moodle-XML) mit Code-Vervollständigung, Funktionshilfe und Live-Vorschau inkl. MathJax und JSXGraph.
+A self-hosted web editor for [STACK](https://stack-assessment.org/) questions in Moodle XML format. It gives question authors a proper code editor for Maxima and CASText, a graphical view of potential response trees (PRTs), a visual JSXGraph builder and a live preview that renders questions the way Moodle does — without having to round-trip through a Moodle instance for every change.
 
-## Start
+Built with Next.js, React, CodeMirror 6, MathJax 3, JSXGraph and MathLive. The user interface is available in **German, English, French, Spanish, Italian and Slovak**.
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Users, sharing and storage](#users-sharing-and-storage)
+- [Deployment with Docker](#deployment-with-docker)
+- [Limitations of the local preview](#limitations-of-the-local-preview)
+- [Development](#development)
+- [Project structure](#project-structure)
+- [License](#license)
+
+## Features
+
+### Editing
+
+- **Moodle XML import and export** — open questions from the database, upload files or drag and drop them in. Files containing several questions are supported, and unknown XML elements are preserved unchanged on save.
+- **Maxima editor** for question variables, feedback variables, model answers and PRT nodes:
+  - autocompletion for about 150 STACK and Maxima functions and for your own variables (showing their current values),
+  - hover documentation with signature, description, return value and example,
+  - signature help that highlights the active parameter while typing,
+  - linting for syntax errors, evaluation errors and missing semicolons.
+- **CASText editor** for question text and feedback, in HTML or plain-text mode. Highlights `{@…@}`, `{#…#}`, `[[input:…]]` and blocks; auto-closes `{@` / `{#`; completes placeholders, blocks (`[[if]]`, `[[jsxgraph]]`, …) and LaTeX. A toolbar inserts placeholders and formulas (with a MathLive formula editor).
+- **Editors for inputs, PRTs, options, question tests and variants.** Renaming an input or PRT updates every reference to it.
+- **Function reference** with search, categories, answer tests and CASText blocks. *Insert* puts the entry into the editor you used last.
+
+### Potential response trees
+
+- An **overview** shows which part of the question and which input is evaluated by which PRT, in question-text order. Inputs without a PRT and PRTs without an input are flagged.
+- Each PRT is drawn as a **tree** with true/false branches, back references and leaf nodes including scores. Clicking a node opens its settings.
+- SAns and TAns fields offer **pick lists** of inputs, model answers, question variables (with current values) and feedback variables; free text is still allowed.
+
+### JSXGraph builder
+
+- Opened from the *Graph* button in the question-text toolbar, with a live preview.
+- Configure the board (size, x/y range, axes, grid, aspect ratio) and add points, sliders, function graphs, segments/lines/arrows and text. Values and terms use Maxima notation (`a*(x-1)^2`, `sqrt(x)`) and may reference slider names, point coordinates (`A_x`) and `{#var#}`.
+- Points and sliders can be **bound to inputs** — the builder adds the `input-ref-…` attributes and `stack_jxg.bind_*` calls (using `bind_list_of` for several objects on one input) and can create the input field for you, optionally hidden.
+- Elements can be **dragged in the preview** and the new values are written back.
+- Existing graphs — including hand-written ones — are **parsed back into the form**. Anything the builder does not recognise is kept verbatim as a *custom code* element.
+
+### Live preview
+
+- Moodle-style rendering with MathJax 3 and JSXGraph, including `stack_jxg.bind_*`.
+- Switch between random variants via the seed.
+- Live input validation, *Check* evaluates all PRTs and shows the score, *Fill in model answer* fills every input.
+- Tabs for a variable table, a list of problems and the question tests.
+- Calculations run on a built-in TypeScript implementation of Maxima, or optionally on a real **Maxima server** (see below).
+
+### Workspace
+
+- **Dashboard** with recently edited questions, categories (create, rename, delete), per-category *New question* and *Upload XML*, and search across file and question names.
+- **Save without prompts:** `Ctrl+S` names new questions after their title and numbers duplicates (`-2`, `-3`) instead of overwriting. *Save as …* creates a copy.
+- **Version history:** the last 20 revisions of every file are kept.
+- **Conflict detection:** if someone else saved the file in the meantime, the editor asks before overwriting.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+S` | Save |
+| `Ctrl+Shift+S` | Save and download the XML file |
+| `Ctrl+Space` | Open autocompletion |
+
+## Quick start
+
+Requirements: **Node.js 22** or later.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Danach <http://localhost:3000> öffnen. `npm install` kopiert MathJax und JSXGraph nach `public/vendor`, die Vorschau läuft deshalb auch offline.
+Then open <http://localhost:3000>. On first launch the login page lets you create the first account, which becomes the administrator.
 
-### Maxima-Server (optional)
+`npm install` copies MathJax and JSXGraph into `public/vendor`, so the preview also works offline. Without further configuration, data is stored in a local SQLite file (`data/stack-editor.db`).
 
-Die Vorschau rechnet normalerweise mit einem eigenen Maxima-Nachbau in TypeScript. Für Funktionen, die dieser nicht kann (`solve`, `factor`, `limit` …), lässt sich ein echter Maxima-Server einbinden, wie ihn auch STACK nutzt (goemaxima bzw. MaximaPool). Dafür eine `.env` bzw. `.env.local` anlegen, Vorlage: `.env.example`:
+## Configuration
+
+Settings are read from environment variables, or from `.env` / `.env.local`. Copy [`.env.example`](.env.example) as a starting point.
+
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string. If unset, SQLite is used. |
+| `STACK_DATA_DIR` | Directory of the SQLite database (default `./data`). |
+| `STACK_XML_DIR` | Directory of legacy XML files imported on first start (default `./xml`). |
+| `POSTGRES_PASSWORD` | Docker Compose only: password of the internal PostgreSQL user. Must be set **before the first start**. |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | Create the first administrator automatically at startup. |
+| `MAXIMA_URL` | URL of a goemaxima / MaximaPool server (for goemaxima it ends in `/goemaxima`). Empty = local preview only. |
+| `MAXIMA_TIMEOUT` | Request timeout in milliseconds (default `10000`). |
+| `MAXIMA_VERSION` | STACK version reported to the Maxima server, e.g. `2024012900`. |
+
+### Maxima server (optional)
+
+The local preview cannot evaluate everything (e.g. `solve`, `factor`, `limit`). For those cases you can connect the same kind of Maxima server STACK itself uses ([goemaxima](https://github.com/mathinstitut/goemaxima) or MaximaPool):
 
 ```bash
 MAXIMA_URL=https://your-maxima-host/goemaxima
-MAXIMA_TIMEOUT=10000          # optional, Millisekunden
-MAXIMA_VERSION=2024012900     # optional, STACK-Version für den Server
 ```
 
-- In der Vorschau-Leiste wählst du **Automatisch** (Maxima nur, wenn die lokale Vorschau etwas nicht kann), **Immer Maxima** oder **Nur lokal**. Eine Markierung zeigt, womit gerade gerechnet wurde.
-- Mit Maxima werden die Fragevariablen mit `stack_randseed(seed)` ausgewertet. Die Zufallswerte entsprechen damit denen in Moodle. `{@…@}` erscheint mit der LaTeX-Ausgabe von Maxima (`tex1`), Fehler stehen je Anweisung unter „Probleme“.
-- Antworttests in den Rückmeldebäumen und die Eingabevalidierung laufen weiterhin lokal, aber mit den Maxima-Werten.
-- Ist der Server nicht erreichbar, bleibt die lokale Vorschau aktiv, und ein Hinweis nennt den Grund.
-- Die Anfragen laufen über den eigenen Server (`/api/maxima`, nur angemeldet). Die Adresse des Maxima-Servers gelangt nicht in den Browser.
+- The preview toolbar offers **Automatic** (use Maxima only when the local engine cannot handle something), **Always Maxima** and **Local only**. A badge shows which engine produced the current result.
+- With Maxima, question variables are evaluated with `stack_randseed(seed)`, so random values match those in Moodle. `{@…@}` is rendered from Maxima's LaTeX output (`tex1`), and errors are listed per statement under *Problems*.
+- Answer tests and input validation still run locally, but on the values computed by Maxima.
+- If the server is unreachable, the editor falls back to the local preview and tells you why.
+- Requests are proxied through the app (`/api/maxima`, authenticated users only); the Maxima server's address is never exposed to the browser.
 
-### Anmeldung und Datenbank
+## Users, sharing and storage
 
-Benutzer, Kategorien und XML-Dateien liegen in einer Datenbank:
+- **Database:** PostgreSQL when `DATABASE_URL` is set (automatic with Docker Compose), otherwise SQLite. Both use the same queries. When the app starts with an *empty* PostgreSQL database and finds an existing `stack-editor.db`, it migrates users, categories, questions and versions once; the SQLite file is left untouched.
+- **Accounts:** administrators create further users in *User management* (user menu, top right), reset passwords and edit optional first and last names. Every user can change their own password. Deleting a user also deletes their questions, categories and shares.
+- **Private workspaces:** every user sees only their own questions and categories plus those shared with them. This applies to administrators too — their extra rights are limited to user management.
+- **Sharing:** the owner shares a question with selected users as *Read* (view and download) or *Edit* (change content, but not rename, move, delete or re-share). Shared questions appear under *Shared with me*.
+- **Legacy XML files:** when the database is first created, all `*.xml` files in `xml/` (or `STACK_XML_DIR`) are imported once into the category *Imported*.
 
-- **PostgreSQL**, sobald `DATABASE_URL` gesetzt ist. Im Docker-Compose geschieht das automatisch, siehe unten.
-- **SQLite** ohne `DATABASE_URL`: eine Datei `data/stack-editor.db` (Ordner per `STACK_DATA_DIR`). Das ist praktisch für die lokale Entwicklung ohne Datenbankserver.
+> **Upgrade note:** on the first start after upgrading from a single-user version, all existing questions and categories are assigned to the administrator with the lowest ID. Other users see an empty dashboard until that administrator shares questions with them.
 
-Beide verwenden dieselben Abfragen. Startet die App mit einer **leeren** PostgreSQL-Datenbank und findet eine vorhandene `stack-editor.db`, übernimmt sie einmalig deren Benutzer, Kategorien, Aufgaben und Versionen. Die SQLite-Datei bleibt dabei unverändert. Daten ohne Besitzer werden dabei dem Administrator mit der niedrigsten ID zugewiesen.
+**Backup (SQLite):** copy the `data/` directory, ideally while the app is stopped. For PostgreSQL see below.
 
-> **Upgrade-Hinweis:** Beim ersten Start nach dem Update werden **alle vorhandenen Aufgaben und Kategorien dem Administrator mit der niedrigsten ID zugewiesen**. Alle anderen Benutzer sehen danach ein leeres Dashboard, bis dieser Administrator Aufgaben mit ihnen teilt.
+## Deployment with Docker
 
-- **Erster Start:** Gibt es noch keinen Benutzer, legt die Anmeldeseite das erste Konto an. Dieses Konto ist Administrator. Alternativ legen `ADMIN_USER` und `ADMIN_PASSWORD` das Konto beim Start automatisch an.
-- **Weitere Benutzer** legen Administratoren über das Benutzermenü oben rechts an (*Benutzerverwaltung*). Dort lassen sich auch Passwörter zurücksetzen und optionale Vor- und Nachnamen pflegen. Jeder Benutzer kann sein eigenes Passwort ändern. Beim Löschen eines Benutzers werden auch seine Aufgaben, Kategorien und Freigaben gelöscht, ebenso für Personen, mit denen er Aufgaben geteilt hat.
-- **Private Bereiche:** Jeder Benutzer sieht nur seine eigenen Aufgaben und Kategorien sowie die mit ihm geteilten Aufgaben. Das gilt auch für Administratoren: Ihre Rechte beschränken sich auf die Benutzerverwaltung.
-- **Teilen:** Der Besitzer teilt eine Aufgabe mit Benutzern aus einer Liste, entweder als „Lesen“ (ansehen und herunterladen) oder „Bearbeiten“ (Inhalt ändern, aber nicht umbenennen, verschieben, löschen oder weiterteilen). Geteilte Aufgaben erscheinen unter „Mit mir geteilt“.
-- **Alte XML-Dateien:** Beim Anlegen der Datenbank werden alle `*.xml` aus `xml/` (bzw. `STACK_XML_DIR`) einmalig in die Kategorie „Importiert“ übernommen.
-- **Versionen:** Beim Speichern bleiben die letzten 20 Fassungen jeder Datei in der Tabelle `file_versions` erhalten. Sie ersetzen die früheren `.bak`-Dateien.
-- **Gleichzeitiges Bearbeiten:** Hat jemand anderes die Datei inzwischen gespeichert, fragt der Editor vor dem Überschreiben nach.
-- **Sicherung (SQLite):** Für ein Backup genügt der Ordner `data/`. Die Datei sollte dabei nicht gerade beschrieben werden, am einfachsten also bei gestopptem Container. Die Sicherung mit PostgreSQL steht im Abschnitt „Betrieb mit Docker“.
+[`docker-compose.yml`](docker-compose.yml) starts two containers:
 
-## Betrieb mit Docker / Synology Container Manager
+- **`db`** — PostgreSQL 17. It publishes **no ports** and sits only on the internal `backend` network, reachable solely by the app container. Data lives in the Docker volume `pgdata`.
+- **`stack-editor`** — the app (Next.js standalone server, Node 22, Alpine) on port 3000. It waits until the database is healthy.
 
-`docker-compose.yml` startet zwei Container:
-
-- **`db`**: PostgreSQL 17. Der Container hat **keinen Port nach außen** und liegt nur im internen Netz `backend`. Erreichbar ist er ausschließlich für den App-Container. Die Daten liegen im Docker-Volume `pgdata`.
-- **`stack-editor`**: die App (Next.js-Standalone-Server, Node 22, Alpine) auf Port 3000. Sie startet erst, wenn die Datenbank bereit ist, und verbindet sich über `DATABASE_URL=postgres://stack:…@db:5432/stack_editor`.
-
-Die Ordner `xml/` und `data/` sind nur noch für den ersten Start da: Eine SQLite-Datenbank der Vorversion (`data/stack-editor.db`) wird übernommen, sonst werden die XML-Dateien importiert.
-
-1. Upload-Paket erstellen: `npm run package:synology`. Das ergibt `dist/stack-editor-synology.tar.gz`, alternativ lässt sich der Ordner `dist/stack-editor` direkt verwenden.
-2. In der **File Station** z. B. nach `/docker/stack-editor` hochladen und entpacken. Dort liegen dann `docker-compose.yml`, `Dockerfile`, `data/` und `xml/`.
-3. Im **Container Manager**: *Projekt* → *Erstellen* → Projektname `stack-editor`, Pfad `/docker/stack-editor`. Die vorhandene `docker-compose.yml` verwenden und erstellen. Der erste Build dauert einige Minuten.
-4. Die App öffnen: `http://<NAS-IP>:3000` und das erste Administratorkonto anlegen.
-
-**Datenbank-Passwort:** Standardmäßig `stack-editor`. Da die Datenbank von außen nicht erreichbar ist, genügt das. Ein eigenes Passwort trägst du **vor dem ersten Start** als `POSTGRES_PASSWORD=…` in die `.env` ein. PostgreSQL übernimmt es nur beim Anlegen der Datenbank.
-
-**Sicherung:** `docker exec stack-editor-db pg_dump -U stack stack_editor > stack-editor-backup.sql` (per SSH auf der Synology). Zurückspielen in eine leere Datenbank: `docker exec -i stack-editor-db psql -U stack stack_editor < stack-editor-backup.sql`.
-
-**Maxima-Server:** Der Container Manager liest die Datei `.env` im Projektordner, z. B. `MAXIMA_URL=https://…/goemaxima`. Das Paket übernimmt dafür den Wert aus der lokalen `.env.local`. Nach einer Änderung das Projekt neu starten. Leer lassen heißt: nur lokale Vorschau.
-
-**Leserechte:** Der App-Container läuft als Benutzer `node` (UID 1000) und muss `data/` und `xml/` lesen können. Fehlen die Rechte, gibt es zwei Wege:
-- In der File Station dem Ordner `data` Lese- und Schreibrechte für *Everyone* geben.
-- In `docker-compose.yml` die Zeile `user: "UID:GID"` deines Synology-Benutzers aktivieren. Die Werte liefert per SSH `id <benutzer>`, typisch ist `1026:100`.
-
-Den Port änderst du in `docker-compose.yml` unter `ports`, z. B. `"8090:3000"`. Nach einem Update der Dateien im Container Manager das Projekt neu erstellen bzw. das Image neu bauen.
-
-Lokal mit Docker: `docker compose up -d --build`.
-
-## Funktionen
-
-- **Dashboard** (Startseite nach der Anmeldung):
-  - Zuletzt bearbeitete Aufgaben mit Fragename, Kategorie, Bearbeiter und Zeitpunkt.
-  - Kategorien anlegen, umbenennen und löschen. Beim Löschen bleiben die Aufgaben erhalten und stehen danach unter „Ohne Kategorie“.
-  - Jede Kategorie zeigt ihre ersten 5 Aufgaben (zuletzt bearbeitete zuerst). „Alle anzeigen“ klappt den Rest auf.
-  - Pro Kategorie gibt es „Neue Aufgabe“ und „XML hochladen“ (mehrere Dateien möglich).
-  - Suche über Datei- und Fragenamen.
-- **Kategorien im Editor**: Die Auswahl in der Kopfleiste ordnet die geöffnete Datei sofort einer Kategorie zu.
-- **Speichern ohne Rückfrage**: „Speichern“ (Strg+S) benennt neue Aufgaben automatisch nach dem Aufgabentitel und nummeriert sie bei gleichem Namen durch (-2, -3), statt eine vorhandene Datei zu überschreiben. „Speichern unter …“ im Burger-Menü speichert eine Kopie unter einem frei gewählten Namen. Den Dateinamen kann der Besitzer unter „Allgemein“ umbenennen.
-- **In-App-Dialoge**: Alle Bestätigungen und Eingaben erscheinen als Dialoge in der Anwendung, nicht als Browser-Popups.
-- **XML-Import/-Export**: Dateien aus der Datenbank öffnen, hochladen oder per Drag & Drop laden. Dateien mit mehreren Fragen werden unterstützt. Unbekannte Elemente bleiben beim Speichern unverändert erhalten.
-- **Maxima-Editor** (Fragevariablen, Feedback-Variablen, Musterlösungen, PRT-Knoten):
-  - Autovervollständigung für etwa 140 STACK- und Maxima-Funktionen und für eigene Variablen, jeweils mit ihrem aktuellen Wert.
-  - Hilfe beim Überfahren mit der Maus: Signatur, Beschreibung, Rückgabewert und Beispiel.
-  - Signaturhilfe beim Tippen, die den aktiven Parameter hervorhebt.
-  - Linting für Syntaxfehler, Auswertungsfehler und fehlende Semikolons.
-- **CASText-Editor** (Fragetext, Feedback). Eine Frage öffnet immer im HTML-Modus; ein Wechsel zu „Text“ gilt bis zum Neuladen der Seite. `{@`/`{#` werden automatisch zu `{@…@}`/`{#…#}` geschlossen: HTML-Modus mit hervorgehobenen `{@…@}`, `{#…#}`, `[[input:…]]` und Blöcken. Vervollständigung für Platzhalter, Blöcke (`[[if]]`, `[[jsxgraph]]` …) und LaTeX. Eine Werkzeugleiste fügt Platzhalter und Formeln ein.
-- **Live-Vorschau**:
-  - Aufgabe im Moodle-Stil mit MathJax 3 und JSXGraph, einschließlich `stack_jxg.bind_*`.
-  - Wechsel zwischen Varianten über den Seed.
-  - Live-Validierung der Eingaben, „Prüfen“ mit Auswertung aller PRTs und Punkten.
-  - „Musterlösung einsetzen“ trägt die Lösung in alle Felder ein.
-  - Tabs mit Variablentabelle, Problemliste und Fragetests.
-- **Grafik-Editor (JSXGraph)**: Der Button „Grafik“ in der Leiste des Fragetexts öffnet einen Dialog mit Live-Vorschau.
-  - Die Zeichenfläche lässt sich einstellen: Größe, x-/y-Bereich, Achsen, Gitter, Seitenverhältnis.
-  - Als Elemente gibt es Punkte, Schieberegler, Funktionsgraphen, Strecken/Geraden/Pfeile und Texte.
-  - Werte und Terme stehen in Maxima-Schreibweise (`a*(x-1)^2`, `sqrt(x)`). Erlaubt sind auch Reglernamen, Punktkoordinaten (`A_x`) und `{#var#}`. Ein Punkt mit `x = a` folgt dem Regler `a`.
-  - Punkte und Regler lassen sich mit einer vorhandenen oder einer neuen Eingabe verbinden. Der Editor ergänzt `input-ref-…` und `stack_jxg.bind_*` (mehrere Objekte an derselben Eingabe als `bind_list_of`).
-  - Neue Eingaben legt der Editor an und fügt ihr Eingabefeld (auf Wunsch versteckt) hinter der Grafik ein.
-  - In der Vorschau lassen sich Elemente mit der Maus ziehen, die Werte werden übernommen: Punkte (x/y), Regler (Knopf → Startwert, Endpunkte oder Linie → Position) und Funktionsgraphen (Verschiebung x/y, im Code `f(x - dx) + dy`). Felder mit Termen wie `a+1` bleiben dabei unverändert.
-  - Steht der Cursor in einer Grafik, öffnet „Grafik“ diese zum Bearbeiten. Im Text-Modus genügt ein Doppelklick auf den Grafik-Baustein. Der Editor liest dabei den **aktuellen Code** ein, also auch von Hand geschriebene oder nachträglich von Hand geänderte Grafiken: `initBoard`, Punkte, Regler, Funktionsgraphen, Strecken/Geraden, Texte und `stack_jxg.bind_*`. Was er nicht erkennt, bleibt als „Eigener Code“ unverändert erhalten, ebenso nötige `input-ref`s.
-  - Elemente der Art „Eigener Code“ lassen sich auch selbst anlegen, für alles, was der Editor nicht als Formular anbietet.
-- **Rückmeldebäume grafisch**:
-  - Die „Übersicht“ zeigt, welche Teilaufgabe und Eingabe in welchem PRT ausgewertet wird. Die Reihenfolge entspricht dem Fragetext.
-  - Eingaben ohne PRT und PRTs ohne Eingabe werden markiert.
-  - In „Bearbeiten“ sind die PRTs als Tabs angeordnet. Ein Klick öffnet einen PRT. Über das Häkchen, Strg+Klick oder Umschalt+Klick (Bereich) öffnest du mehrere untereinander, „Alle öffnen“ zeigt alle.
-  - SAns und TAns haben eine Auswahlliste. SAns bietet die Eingaben und die Feedback-Variablen an, TAns die Musterlösungen der Eingaben, die Fragevariablen samt aktuellem Wert und die Feedback-Variablen. Freier Text bleibt möglich.
-  - Jeder PRT wird als Baum mit wahr/falsch-Zweigen, Rückverweisen und Endpunkten samt Punkten dargestellt. Ein Klick auf einen Knoten öffnet seine Einstellungen.
-- **Editoren für Eingaben, PRTs, Optionen, Fragetests und Varianten**. Eingaben und Rückmeldebäume sind als Tabs angeordnet: Klick öffnet einen Eintrag, Häkchen, Strg+Klick oder Umschalt+Klick öffnen mehrere. Beim Umbenennen von Eingaben oder PRTs werden alle Verweise angepasst.
-- **Kopfleiste**: Die Kopfleiste zeigt nur Datei, Kategorie, „Speichern“ und das Benutzermenü. Alle weiteren Aktionen stehen im Burger-Menü links: neue Aufgabe, XML hochladen, Speichern unter …, Speichern & Download, XML kopieren, Kategorie, Funktionsreferenz, Vorschau und zuletzt bearbeitete Dateien.
-- **Funktionsreferenz** (im Burger-Menü) mit Suche, Kategorien, Antworttests und CASText-Blöcken. „Einfügen“ setzt den Eintrag in den zuletzt benutzten Editor ein.
-
-Tastenkürzel: `Strg+S` speichert, `Strg+Umschalt+S` speichert und lädt die XML-Datei herunter, `Strg+Leertaste` öffnet die Vervollständigung.
-
-## Grenzen der Vorschau
-
-Die Vorschau rechnet mit einem eigenen Maxima-Nachbau in TypeScript (`lib/maxima`), nicht mit dem echten CAS:
-
-- Abgedeckt sind die in STACK-Aufgaben üblichen Funktionen: `rand*`, Listen und Mengen, `if`/`block`/`makelist`, `diff`, `expand`, `subst`, `ev`, einfache `integrate`, Strings und MCQ-Hilfen. Nicht ausgewertet werden u. a. `solve`, `factor` und `limit`. Bei solchen Funktionen erscheint ein Hinweis.
-- Antworttests werden näherungsweise geprüft. `AlgEquiv` vergleicht zum Beispiel numerisch an Stichprobenpunkten.
-- Der Zufallsgenerator weicht von Maxima ab. Ein Seed liefert hier andere Werte als in Moodle.
-
-Maßgeblich bleibt deshalb das Verhalten in Moodle. Die Vorschau ist für schnelles Iterieren gedacht. Mit einem Maxima-Server (siehe oben) entfallen die ersten und letzten Einschränkungen für Fragevariablen und `{@…@}`.
-
-## Projektstruktur
-
+```bash
+docker compose up -d --build
 ```
-app/                 Next.js App Router: / (Dashboard), /editor, /login, API unter /api/*
-components/          UI (Dashboard, Login, Benutzermenü, Editor-App, Vorschau, Referenz, Abschnitte, CodeMirror-Wrapper)
-lib/server/          Datenbank (PostgreSQL/SQLite), Datenzugriff, Passwort-Hashing, Sitzungen, Maxima-Anbindung
-lib/client/          fetch-Helfer für die API
-lib/maxima/          Parser, Vereinfacher, Auswerter, LaTeX-/Text-Ausgabe
-lib/stack/           XML-Modell, CASText-Renderer, Antworttests, Vorschau, Funktionsdoku
-lib/editor/          CodeMirror-Erweiterungen (Sprache, Vervollständigung, Hover, Lint)
-tests/               node:test-Tests (npm test)
-data/                SQLite-Datenbank für die lokale Entwicklung (nicht im Git)
-xml/                 alte XML-Aufgaben (Import beim ersten Start)
+
+To change the port, edit `ports` in `docker-compose.yml`, e.g. `"8090:3000"`. Settings such as `MAXIMA_URL` and `POSTGRES_PASSWORD` go into a `.env` file next to `docker-compose.yml`. The default database password is `stack-editor`; since the database is not reachable from outside this is acceptable, but you can set your own before the first start (PostgreSQL only applies it when the database is created).
+
+**Backup and restore (PostgreSQL):**
+
+```bash
+docker exec stack-editor-db pg_dump -U stack stack_editor > stack-editor-backup.sql
 ```
 
 ```bash
-npm test          # Engine-, XML-Round-Trip-, Vorschau- und Datenbank-Tests (SQLite und ein eingebetteter PostgreSQL-Server)
-npm run typecheck
+docker exec -i stack-editor-db psql -U stack stack_editor < stack-editor-backup.sql
 ```
+
+The mounted `data/` and `xml/` folders are only used on first start, to migrate an older SQLite database or import XML files.
+
+### Synology Container Manager
+
+1. Build the upload package: `npm run package:synology`. This produces `dist/stack-editor-synology.tar.gz` (or use the folder `dist/stack-editor` directly). The package takes `MAXIMA_URL` from your local `.env.local`.
+2. Upload and extract it in **File Station**, e.g. to `/docker/stack-editor`.
+3. In **Container Manager**: *Project* → *Create*, name `stack-editor`, path `/docker/stack-editor`, use the existing `docker-compose.yml`. The first build takes a few minutes.
+4. Open `http://<NAS-IP>:3000` and create the first administrator account.
+
+**Permissions:** the app container runs as user `node` (UID 1000) and needs to read `data/` and `xml/`. If it cannot, either grant *Everyone* read/write access to `data` in File Station, or enable the `user: "UID:GID"` line in `docker-compose.yml` with your Synology user's IDs (`id <username>` via SSH, typically `1026:100`).
+
+After updating the files, rebuild the project in Container Manager.
+
+## Limitations of the local preview
+
+Without a Maxima server, the preview uses its own TypeScript re-implementation of Maxima ([`lib/maxima`](lib/maxima)) rather than the real CAS:
+
+- It covers the functions commonly used in STACK questions: `rand*`, lists and sets, `if` / `block` / `makelist`, `diff`, `expand`, `subst`, `ev`, simple `integrate`, strings and MCQ helpers. Functions such as `solve`, `factor` and `limit` are not evaluated; a notice is shown instead.
+- Answer tests are approximated — `AlgEquiv`, for instance, compares numerically at sample points.
+- The random number generator differs from Maxima's, so a given seed yields different values than in Moodle.
+
+Moodle remains the reference; the preview is meant for fast iteration. Connecting a Maxima server removes the first and last limitation for question variables and `{@…@}`.
+
+## Development
+
+```bash
+npm test           # engine, XML round-trip, preview, i18n and database tests (SQLite and embedded PostgreSQL)
+npm run typecheck  # TypeScript type check
+npm run build      # production build
+```
+
+Tests use the built-in `node:test` runner. Translations live in [`lib/i18n/messages`](lib/i18n/messages); a test scans the source for untranslated German strings, and another ensures the exported XML is byte-identical regardless of the UI language. Terminology is collected in [`docs/i18n-glossar.md`](docs/i18n-glossar.md).
+
+## Project structure
+
+```
+app/            Next.js App Router: / (dashboard), /editor, /login, API routes under /api/*
+components/     UI: dashboard, login, user menu, editor app, preview, reference, sections, CodeMirror wrappers
+lib/server/     database (PostgreSQL/SQLite), data access, password hashing, sessions, Maxima proxy
+lib/client/     fetch helpers for the API
+lib/maxima/     Maxima parser, simplifier, evaluator, LaTeX/text output
+lib/stack/      XML model, CASText renderer, answer tests, preview, PRT graph, JSXGraph builder, function docs
+lib/editor/     CodeMirror extensions (languages, completion, hover, lint, formula editor)
+lib/i18n/       locales, message catalogues, translation helpers
+scripts/        vendor copy (postinstall) and Synology packaging
+tests/          node:test test suites
+data/           local SQLite database (not in Git)
+xml/            legacy XML questions (imported on first start)
+```
+
+## License
+
+Copyright (c) 2026 Thomas Bock.
+
+This project is released under the [PolyForm Noncommercial License 1.0.0](LICENSE). The source code is public: you may use, study, modify and share it for any **noncommercial** purpose. That includes personal use, research, teaching, and use by schools, universities, public research institutions, charities and government bodies.
+
+You may **not** use the software, or forks or modified versions of it, for commercial purposes. That includes selling it, offering it as a paid or commercial hosted service, or bundling it into a commercial product. Anyone you share a copy or fork with must receive the license terms and the `Required Notice` line from [LICENSE](LICENSE).
+
+If you are interested in commercial use, please get in touch to discuss a separate license.
+
+Third-party libraries (Next.js, React, CodeMirror, MathJax, JSXGraph, MathLive and others) remain under their own licenses.

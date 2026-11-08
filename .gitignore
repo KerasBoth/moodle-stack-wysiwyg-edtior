@@ -9,3 +9,11 @@ data
 .env*.local
 .superpowers/
 .idea
+
+# Lokale Arbeitsdateien (nicht im Repo)
+CLAUDE.md
+AGENTS.md
+.claude/
+docs/superpowers/
+xml/*
+!xml/.gitkeep
